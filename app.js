@@ -8,8 +8,11 @@ const config = {
     clientId: localStorage.getItem('google_client_id') || '710668584134-j2bdh6dptd1d46uojgqofubfn70out0g.apps.googleusercontent.com',
     geminiKey: localStorage.getItem('gemini_api_key') || '',
     geminiModel: localStorage.getItem('gemini_model') || 'gemini-1.5-flash',
-    criteria: localStorage.getItem('extraction_criteria') || "質問、依頼、期限付きの連絡、自分が対応すべきタスク。"
+    criteria: localStorage.getItem('extraction_criteria') || "質問、依頼、内容確認の依頼、期限付きの連絡、自分が対応すべきタスク。ishigami|tlp|slp 宛のメールを重点的に。",
+    doneTasks: JSON.parse(localStorage.getItem('done_tasks') || '[]')
 };
+
+let autoSyncInterval = null;
 
 // Global level init handlers
 window.gapiLoaded = function() {
@@ -151,6 +154,10 @@ function onLoginSuccess() {
         if (loginView) loginView.style.display = 'none';
         if (appView) appView.style.display = 'grid';
         syncTasks();
+        
+        // Start auto-sync every 5 minutes
+        if (autoSyncInterval) clearInterval(autoSyncInterval);
+        autoSyncInterval = setInterval(syncTasks, 5 * 60 * 1000);
     }, 300);
 }
 
@@ -212,9 +219,13 @@ async function syncTasks() {
     try {
         const gmailMsgs = await fetchGmailMessages();
         const tasks = await analyzeWithGemini(gmailMsgs);
-        renderTasks(tasks);
+        
+        // Filter out completed tasks
+        const filteredTasks = tasks.filter(t => !config.doneTasks.includes(t.refId));
+        
+        renderTasks(filteredTasks);
         const status = document.getElementById('sync-status');
-        if (status) status.innerText = `Last synced: ${new Date().toLocaleTimeString()}`;
+        if (status) status.innerText = `Auto-Sync Active (Last: ${new Date().toLocaleTimeString()})`;
     } catch (e) {
         console.error("Sync Error:", e);
         alert(`Sync failed: ${e.message}`);
@@ -225,8 +236,10 @@ async function syncTasks() {
 
 
 async function fetchGmailMessages() {
-    // Broad search: Anything in inbox from the last 7 days (read or unread)
-    const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=100&q=label:inbox newer_than:7d', {
+    // Specific query matching user criteria:
+    // To: ishigami|tlp|slp, Newer: 7d, NOT from: tlp|slp
+    const q = '(to:ishigami@isl.gr.jp OR to:tlp@isl.gr.jp OR to:slp@isl.gr.jp) -from:tlp@isl.gr.jp -from:slp@isl.gr.jp newer_than:7d';
+    const response = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=100&q=${encodeURIComponent(q)}`, {
         headers: { 'Authorization': `Bearer ${accessToken}` }
     });
     // Check for 403 Forbidden
@@ -283,15 +296,17 @@ async function analyzeWithGemini(messages) {
     
     const prompt = `
     Analyze these Gmail messages and extract EVERY "ACTION REQUIRED" task.
-    Criteria: ${config.criteria}
+    User's Extraction Criteria:
+    - Target Recipient: ishigami@isl.gr.jp OR tlp@isl.gr.jp OR slp@isl.gr.jp 宛のメール
+    - Rules: 質問、依頼、内容確認の依頼、期限付きの連絡、自分が対応すべきタスク
+    - Exclusivity: 具体的で詳細な手順を出力すること
     
     CRITICAL INSTRUCTIONS:
-    - DO NOT limit the output. If there are many tasks, list them all (up to 20-30 items).
-    - For each task, provide a CONCRETE and DETAILED action (e.g., "Reply to [Name] about [Subject] by tomorrow morning" instead of just "Check email").
+    - Provide a CONCRETE and DETAILED action (e.g., "Reply to [Name] about [Subject] by tomorrow morning").
     - You MUST include the "refId" which is the exact "id" from the source message data.
     
     Output JSON aggregate array only:
-    [{"source": "Gmail", "priority": "high|mid|low", "title": "Specific Task Title", "desc": "Detailed Step-by-Step Action", "time": "Sender/Time", "refId": "original_id"}]
+    [{"source": "Gmail", "priority": "high|mid|low", "title": "Task Title", "desc": "Step-by-Step Action", "time": "From/Date", "refId": "id"}]
     
     Data:
     ${JSON.stringify(messages.slice(0, 40))}
@@ -338,15 +353,28 @@ function renderTasks(tasks) {
     }
 
     list.innerHTML = tasks.map(task => `
-        <div class="task-card glass-panel priority-${task.priority || 'mid'}" onclick="window.open('${task.url}', '_blank')" style="cursor: pointer;">
-            <div class="task-header">
+        <div class="task-card glass-panel priority-${task.priority || 'mid'}">
+            <div class="task-header" onclick="window.open('${task.url}', '_blank')" style="cursor: pointer; flex-grow: 1;">
                 <span class="task-source">${task.source} • ${task.time || ''}</span>
                 <span style="font-size: 0.7rem; color: ${getPriorityColor(task.priority)};">Priority: ${String(task.priority).toUpperCase()}</span>
             </div>
-            <div class="task-title">${task.title}</div>
-            <p class="task-desc">${task.desc}</p>
+            <div onclick="window.open('${task.url}', '_blank')" style="cursor: pointer;">
+                <div class="task-title">${task.title}</div>
+                <p class="task-desc">${task.desc}</p>
+            </div>
+            <div style="margin-top: 1rem; border-top: 1px solid var(--glass-border); padding-top: 0.8rem; display: flex; justify-content: flex-end;">
+                <button onclick="dismissTask('${task.refId}')" class="btn" style="padding: 4px 12px; font-size: 0.7rem; background: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e; color: #4ade80;">完了にする</button>
+            </div>
         </div>
     `).join('');
+}
+
+window.dismissTask = function(id) {
+    if (!config.doneTasks.includes(id)) {
+        config.doneTasks.push(id);
+        localStorage.setItem('done_tasks', JSON.stringify(config.doneTasks));
+        syncTasks();
+    }
 }
 
 function getPriorityColor(p) {
