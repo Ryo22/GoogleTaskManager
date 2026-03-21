@@ -13,6 +13,7 @@ const config = {
 };
 
 let autoSyncInterval = null;
+let lastFetchedTasks = []; // Cache for current tasks
 
 // Global level init handlers
 window.gapiLoaded = function() {
@@ -220,10 +221,9 @@ async function syncTasks() {
         const gmailMsgs = await fetchGmailMessages();
         const tasks = await analyzeWithGemini(gmailMsgs);
         
-        // Filter out completed tasks
-        const filteredTasks = tasks.filter(t => !config.doneTasks.includes(t.refId));
-        
-        renderTasks(filteredTasks);
+        lastFetchedTasks = tasks;
+        renderFilteredTasks();
+
         const status = document.getElementById('sync-status');
         if (status) status.innerText = `Auto-Sync Active (Last: ${new Date().toLocaleTimeString()})`;
     } catch (e) {
@@ -348,12 +348,12 @@ function renderTasks(tasks) {
     if (!list) return;
     
     if (tasks.length === 0) {
-        list.innerHTML = '<div style="text-align:center; padding: 2rem; color:var(--text-dim);">No action items found in your recent unread emails.</div>';
+        list.innerHTML = '<div style="text-align:center; padding: 2rem; color:var(--text-dim);">No action items found. All clear!</div>';
         return;
     }
 
     list.innerHTML = tasks.map(task => `
-        <div class="task-card glass-panel priority-${task.priority || 'mid'}">
+        <div id="task-${task.refId}" class="task-card glass-panel priority-${task.priority || 'mid'}">
             <div class="task-header" onclick="window.open('${task.url}', '_blank')" style="cursor: pointer; flex-grow: 1;">
                 <span class="task-source">${task.source} • ${task.time || ''}</span>
                 <span style="font-size: 0.7rem; color: ${getPriorityColor(task.priority)};">Priority: ${String(task.priority).toUpperCase()}</span>
@@ -369,11 +369,25 @@ function renderTasks(tasks) {
     `).join('');
 }
 
+function renderFilteredTasks() {
+    const filtered = lastFetchedTasks.filter(t => !config.doneTasks.includes(t.refId));
+    renderTasks(filtered);
+}
+
 window.dismissTask = function(id) {
     if (!config.doneTasks.includes(id)) {
         config.doneTasks.push(id);
         localStorage.setItem('done_tasks', JSON.stringify(config.doneTasks));
-        syncTasks();
+        
+        // Immediate visual feedback: Hide the element
+        const el = document.getElementById(`task-${id}`);
+        if (el) {
+            el.style.opacity = '0';
+            el.style.transform = 'translateY(-20px)';
+            setTimeout(renderFilteredTasks, 300);
+        } else {
+            renderFilteredTasks();
+        }
     }
 }
 
