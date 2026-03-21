@@ -7,6 +7,7 @@ let gisInited = false;
 const config = {
     clientId: localStorage.getItem('google_client_id') || '710668584134-j2bdh6dptd1d46uojgqofubfn70out0g.apps.googleusercontent.com',
     geminiKey: localStorage.getItem('gemini_api_key') || '',
+    geminiModel: localStorage.getItem('gemini_model') || 'gemini-1.5-flash',
     criteria: localStorage.getItem('extraction_criteria') || "質問、依頼、期限付きの連絡、自分が対応すべきタスク。"
 };
 
@@ -73,6 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setActiveNav('nav-settings');
         document.getElementById('client-id-input').value = config.clientId;
         document.getElementById('gemini-key-input').value = config.geminiKey;
+        document.getElementById('gemini-model-input').value = config.geminiModel;
         document.getElementById('criteria-textarea').value = config.criteria;
     });
 
@@ -80,10 +82,12 @@ document.addEventListener('DOMContentLoaded', () => {
         saveBtn.addEventListener('click', () => {
             const newClientId = document.getElementById('client-id-input').value;
             const newKey = document.getElementById('gemini-key-input').value;
+            const newModel = document.getElementById('gemini-model-input').value;
             const newCriteria = document.getElementById('criteria-textarea').value;
             
             localStorage.setItem('google_client_id', newClientId);
             localStorage.setItem('gemini_api_key', newKey);
+            localStorage.setItem('gemini_model', newModel || 'gemini-1.5-flash');
             localStorage.setItem('extraction_criteria', newCriteria);
             
             alert("Success: Saved. Reloading page...");
@@ -170,6 +174,7 @@ async function analyzeWithGemini(messages) {
     if (messages.length === 0) return [];
     if (!config.geminiKey) return [{ source: 'System', priority: 'mid', title: 'API Key Missing', desc: 'Please set Gemini API Key in Settings.' }];
 
+    const modelName = config.geminiModel || 'gemini-1.5-flash';
     const prompt = `
     Analyze the following unread Gmail messages and extract "ACTION REQUIRED" items.
     Extraction Criteria: ${config.criteria}
@@ -182,7 +187,7 @@ async function analyzeWithGemini(messages) {
     `;
 
     try {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${config.geminiKey}`, {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1/models/${modelName}:generateContent?key=${config.geminiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
