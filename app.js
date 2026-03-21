@@ -230,37 +230,56 @@ async function syncTasks() {
 
 async function fetchChatMessages() {
     try {
-        const spaceRes = await fetch('https://chat.googleapis.com/v1/spaces', {
+        console.log("Fetching spaces...");
+        const spaceRes = await fetch('https://chat.googleapis.com/v1/spaces?pageSize=100', {
             headers: { 'Authorization': `Bearer ${accessToken}` }
         });
-        const spaceData = await spaceRes.json();
-        if (!spaceData.spaces) return [];
+        
+        if (spaceRes.status === 403) {
+            console.warn("Chat API Access Forbidden. Check OAuth Scopes or Chat API configuration.");
+            return []; // Fail silently but log
+        }
 
-        // Fetch messages from newest 5 spaces to avoid overhead
-        const spaces = spaceData.spaces.slice(0, 5);
+        const spaceData = await spaceRes.json();
+        if (spaceData.error) {
+            console.error("Chat API Error:", spaceData.error);
+            return [];
+        }
+
+        if (!spaceData.spaces || spaceData.spaces.length === 0) {
+            console.log("No Chat spaces found.");
+            return [];
+        }
+
+        const spaces = spaceData.spaces.slice(0, 10);
         const allMessages = [];
 
         await Promise.all(spaces.map(async (s) => {
-            const msgRes = await fetch(`https://chat.googleapis.com/v1/${s.name}/messages?pageSize=10`, {
-                headers: { 'Authorization': `Bearer ${accessToken}` }
-            });
-            const msgData = await msgRes.json();
-            if (msgData.messages) {
-                msgData.messages.forEach(m => {
-                    allMessages.push({
-                        source: 'Chat',
-                        id: m.name, // "spaces/.../messages/..."
-                        snippet: m.text,
-                        from: m.sender?.displayName || 'Chat User',
-                        subject: s.displayName || 'Space',
-                        url: `https://mail.google.com/chat/u/0/#chat/${s.name.split('/').pop()}`
-                    });
+            try {
+                const msgRes = await fetch(`https://chat.googleapis.com/v1/${s.name}/messages?pageSize=20`, {
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
                 });
+                const msgData = await msgRes.json();
+                if (msgData.messages) {
+                    msgData.messages.forEach(m => {
+                        allMessages.push({
+                            source: 'Chat',
+                            id: m.name,
+                            snippet: m.text || '(No text)',
+                            from: m.sender?.displayName || 'Chat User',
+                            subject: s.displayName || 'Space',
+                            url: `https://mail.google.com/chat/u/0/#chat/${s.name.split('/').pop()}`
+                        });
+                    });
+                }
+            } catch (e) {
+                console.warn(`Failed to fetch messages for space ${s.name}`, e);
             }
         }));
+        console.log(`Fetched ${allMessages.length} chat messages.`);
         return allMessages;
     } catch (e) {
-        console.warn("Chat fetch failed", e);
+        console.error("Chat fetch general error", e);
         return [];
     }
 }
