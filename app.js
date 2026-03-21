@@ -75,12 +75,22 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('client-id-input').value = config.clientId;
         document.getElementById('gemini-key-input').value = config.geminiKey;
         document.getElementById('criteria-textarea').value = config.criteria;
-        
-        // Fetch and populate available models
-        if (config.geminiKey) {
-            await updateModelDropdown();
-        }
     });
+
+    if (document.getElementById('fetch-models-btn')) {
+        document.getElementById('fetch-models-btn').addEventListener('click', async () => {
+            const key = document.getElementById('gemini-key-input').value;
+            if (!key) {
+                alert("Please enter a Gemini API Key first.");
+                return;
+            }
+            const btn = document.getElementById('fetch-models-btn');
+            btn.innerText = "取得中...";
+            await updateModelDropdown(key);
+            btn.innerText = "利用可能なモデルを取得";
+            alert("利用可能なモデルをロードしました。");
+        });
+    }
 
     if (saveBtn) {
         saveBtn.addEventListener('click', () => {
@@ -128,15 +138,21 @@ function setActiveNav(navId) {
     });
 }
 
-async function updateModelDropdown() {
+async function updateModelDropdown(providedKey) {
     const select = document.getElementById('gemini-model-select');
-    if (!select || !config.geminiKey) return;
+    const keyToUse = providedKey || config.geminiKey;
+    if (!select || !keyToUse) return;
 
     try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${config.geminiKey}`);
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${keyToUse}`);
         const data = await response.json();
+        
+        if (data.error) {
+            alert("Error fetching models: " + data.error.message);
+            return;
+        }
+
         if (data.models) {
-            // Keep current value if it exists in the list
             const currentSelected = config.geminiModel;
             select.innerHTML = data.models
                 .filter(m => m.supportedGenerationMethods.includes('generateContent'))
@@ -147,6 +163,7 @@ async function updateModelDropdown() {
         }
     } catch (e) {
         console.error("Failed to fetch models", e);
+        alert("取得に失敗しました。APIキーまたはインターネット接続を確認してください。");
     }
 }
 
