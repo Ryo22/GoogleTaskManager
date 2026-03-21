@@ -69,20 +69,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (navTasks) navTasks.addEventListener('click', () => { showView('task-list'); setActiveNav('nav-tasks'); });
-    if (navSettings) navSettings.addEventListener('click', () => {
+    if (navSettings) navSettings.addEventListener('click', async () => {
         showView('settings-view');
         setActiveNav('nav-settings');
         document.getElementById('client-id-input').value = config.clientId;
         document.getElementById('gemini-key-input').value = config.geminiKey;
-        document.getElementById('gemini-model-input').value = config.geminiModel;
         document.getElementById('criteria-textarea').value = config.criteria;
+        
+        // Fetch and populate available models
+        if (config.geminiKey) {
+            await updateModelDropdown();
+        }
     });
 
     if (saveBtn) {
         saveBtn.addEventListener('click', () => {
             const newClientId = document.getElementById('client-id-input').value;
             const newKey = document.getElementById('gemini-key-input').value;
-            const newModel = document.getElementById('gemini-model-input').value;
+            const newModel = document.getElementById('gemini-model-select').value;
             const newCriteria = document.getElementById('criteria-textarea').value;
             
             localStorage.setItem('google_client_id', newClientId);
@@ -122,6 +126,28 @@ function setActiveNav(navId) {
         const el = document.getElementById(id);
         if (el) el.style.background = id === navId ? 'rgba(255,255,255,0.05)' : 'transparent';
     });
+}
+
+async function updateModelDropdown() {
+    const select = document.getElementById('gemini-model-select');
+    if (!select || !config.geminiKey) return;
+
+    try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${config.geminiKey}`);
+        const data = await response.json();
+        if (data.models) {
+            // Keep current value if it exists in the list
+            const currentSelected = config.geminiModel;
+            select.innerHTML = data.models
+                .filter(m => m.supportedGenerationMethods.includes('generateContent'))
+                .map(m => {
+                    const id = m.name.split('/').pop();
+                    return `<option value="${id}" ${id === currentSelected ? 'selected' : ''}>${m.displayName} (${id})</option>`;
+                }).join('');
+        }
+    } catch (e) {
+        console.error("Failed to fetch models", e);
+    }
 }
 
 async function syncTasks() {

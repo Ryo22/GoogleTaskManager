@@ -67,8 +67,10 @@
 
                 <div class="setting-item">
                     <label>Gemini Model</label>
-                    <input type="text" id="gemini-model-input" placeholder="gemini-1.5-flash" style="width:100%; padding:8px; border-radius:8px; background:rgba(0,0,0,0.2); border:1px solid var(--glass-border); color:white;">
-                    <p style="font-size:0.75rem; color:var(--text-dim);">例: gemini-1.5-flash, gemini-1.5-pro</p>
+                    <select id="gemini-model-select" style="width:100%; padding:8px; border-radius:8px; background:rgba(0,0,0,0.2); border:1px solid var(--glass-border); color:white; font-family:inherit;">
+                        <option value="gemini-1.5-flash">gemini-1.5-flash (取得中...)</option>
+                    </select>
+                    <p style="font-size:0.75rem; color:var(--text-dim);">APIキーに基づき、最新の利用可能モデルを表示します</p>
                 </div>
 
                 <div class="setting-item">
