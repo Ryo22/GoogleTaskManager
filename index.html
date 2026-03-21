@@ -8,10 +8,6 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
-    <script src="app.js"></script>
-    <!-- Google Identity Services -->
-    <script src="https://accounts.google.com/gsi/client" onload="initGis()"></script>
-    <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
 </head>
 <body>
     <div id="login-view" class="auth-container">
@@ -21,7 +17,7 @@
             GitHub Pages 上で動作する純粋なクライアントサイド・ツールです。
         </p>
         <button id="login-btn" class="btn" style="display: none;">Google でログイン</button>
-        <div id="setup-initial" style="margin-top: 1rem; color: var(--text-dim); font-size: 0.9rem;">
+        <div id="setup-initial" style="margin-top: 1rem; color: var(--text-dim); font-size: 0.9rem; display: none;">
             ※初めて利用する場合は Settings から Client ID と API Key を設定してください
         </div>
     </div>
@@ -45,9 +41,13 @@
                     <p style="color: var(--text-dim); font-size: 0.9rem;">AIが判断した重要アクションを表示しています</p>
                 </div>
                 <div style="text-align: right;">
-                    <div style="font-size: 0.9rem;">Hello, User</div>
-                    <div style="font-size: 0.7rem; color: var(--text-dim);">user@example.com</div>
+                    <div style="font-size: 0.9rem;">Guest User</div>
+                    <div style="font-size: 0.7rem; color: var(--text-dim);">Signed in with Google</div>
                 </div>
+            </div>
+
+            <div id="task-list">
+                <!-- Task Cards will be injected here -->
             </div>
 
             <!-- Settings View (Hidden by default) -->
@@ -57,13 +57,12 @@
                 <div class="setting-item">
                     <label>Google Client ID</label>
                     <input type="text" id="client-id-input" style="width:100%; padding:8px; border-radius:8px; background:rgba(0,0,0,0.2); border:1px solid var(--glass-border); color:white;">
-                    <p style="font-size:0.75rem; color:var(--text-dim);">Google Cloud Console で作成した Web アプリ用 ID</p>
+                    <p style="font-size:0.75rem; color:var(--text-dim);">OAuth クライアント ID</p>
                 </div>
 
                 <div class="setting-item">
                     <label>Gemini API Key</label>
                     <input type="password" id="gemini-key-input" style="width:100%; padding:8px; border-radius:8px; background:rgba(0,0,0,0.2); border:1px solid var(--glass-border); color:white;">
-                    <p style="font-size:0.75rem; color:var(--text-dim);">AI Studio で取得した API キー</p>
                 </div>
 
                 <div class="setting-item">
@@ -78,5 +77,10 @@
             </div>
         </div>
     </div>
+
+    <!-- Scripts at the bottom -->
+    <script src="app.js"></script>
+    <script src="https://accounts.google.com/gsi/client" onload="initGis()" async defer></script>
+    <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()" async defer></script>
 </body>
 </html>
