@@ -296,21 +296,40 @@ async function fetchGmailMessages() {
     const data = await response.json();
     if (!data.messages) return [];
 
-    const messages = await Promise.all(data.messages.map(async (m) => {
-        const detailRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}`, {
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
-        const msg = await detailRes.json();
-        const headers = msg.payload.headers;
-        return {
-            source: 'Gmail',
-            id: msg.id,
-            snippet: msg.snippet,
-            from: headers.find(h => h.name === 'From')?.value || 'Unknown',
-            subject: headers.find(h => h.name === 'Subject')?.value || 'No Subject',
-            url: `https://mail.google.com/mail/u/0/#inbox/${msg.threadId || msg.id}`
-        };
-    }));
+    const messages = [];
+    const messageIds = data.messages.slice(0, 40); // Detailed fetch limited to 40 items to avoid rate limits
+
+    // Fetch details in small chunks to avoid 429 Too Many Requests
+    for (let i = 0; i < messageIds.length; i += 5) {
+        const chunk = messageIds.slice(i, i + 5);
+        const chunkResults = await Promise.all(chunk.map(async (m) => {
+            try {
+                const detailRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}`, {
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
+                });
+                if (!detailRes.ok) return null;
+                const msg = await detailRes.json();
+                if (!msg.payload) return null;
+                
+                const headers = msg.payload.headers;
+                return {
+                    source: 'Gmail',
+                    id: msg.id,
+                    snippet: msg.snippet,
+                    from: headers.find(h => h.name === 'From')?.value || 'Unknown',
+                    subject: headers.find(h => h.name === 'Subject')?.value || 'No Subject',
+                    url: `https://mail.google.com/mail/u/0/#inbox/${msg.threadId || msg.id}`
+                };
+            } catch (err) {
+                console.warn(`Failed to fetch detail for ${m.id}`, err);
+                return null;
+            }
+        }));
+        messages.push(...chunkResults.filter(r => r !== null));
+        // Small delay to be polite to the API
+        await new Promise(r => setTimeout(r, 100));
+    }
+    
     return messages;
 }
 
