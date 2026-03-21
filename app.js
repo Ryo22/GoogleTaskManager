@@ -188,12 +188,21 @@ async function analyzeWithGemini(messages) {
             body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
         });
         const raw = await res.json();
+        
+        if (raw.error) {
+            return [{ source: 'Error', priority: 'high', title: 'Gemini API Error', desc: raw.error.message }];
+        }
+        
+        if (!raw.candidates || raw.candidates.length === 0) {
+            return [{ source: 'Error', priority: 'high', title: 'AI Analysis Blocked', desc: 'AIが内容の分析を拒否しました。内容が長すぎるか、安全フィルターに制限された可能性があります。' }];
+        }
+        
         const text = raw.candidates[0].content.parts[0].text;
         const jsonMatch = text.match(/\[.*\]/s);
         return jsonMatch ? JSON.parse(jsonMatch[0]) : [];
     } catch (e) {
         console.error("Gemini Error:", e);
-        return [{ source: 'Error', priority: 'high', title: 'Gemini Analysis Failed', desc: e.message }];
+        return [{ source: 'Error', priority: 'high', title: 'Gemini Technical Failure', desc: e.message }];
     }
 }
 
