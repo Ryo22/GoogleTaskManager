@@ -113,7 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (saveBtn) {
-        saveBtn.addEventListener('click', () => {
+        saveBtn.addEventListener('click', async () => {
             const newClientId = document.getElementById('client-id-input').value;
             const newKey = document.getElementById('gemini-key-input').value;
             let newModel = document.getElementById('gemini-model-select').value;
@@ -122,13 +122,20 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const newCriteria = document.getElementById('criteria-textarea').value;
             
+            config.clientId = newClientId;
+            config.geminiKey = newKey;
+            config.geminiModel = newModel;
+            config.criteria = newCriteria;
+
             localStorage.setItem('google_client_id', newClientId);
             localStorage.setItem('gemini_api_key', newKey);
             localStorage.setItem('gemini_model', newModel);
             localStorage.setItem('extraction_criteria', newCriteria);
             
-            alert("Settings saved. Page will reload.");
-            location.reload();
+            alert("Settings saved. Re-syncing tasks...");
+            showView('task-list');
+            setActiveNav('nav-tasks');
+            syncTasks();
         });
     }
 
@@ -203,16 +210,58 @@ async function syncTasks() {
     if (btn) { btn.innerText = 'Syncing...'; btn.disabled = true; }
 
     try {
-        const messages = await fetchGmailMessages();
-        const tasks = await analyzeWithGemini(messages);
+        const [gmailMsgs, chatMsgs] = await Promise.all([
+            fetchGmailMessages(),
+            fetchChatMessages()
+        ]);
+        
+        const combined = [...gmailMsgs, ...chatMsgs];
+        const tasks = await analyzeWithGemini(combined);
         renderTasks(tasks);
         const status = document.getElementById('sync-status');
         if (status) status.innerText = `Last synced: ${new Date().toLocaleTimeString()}`;
     } catch (e) {
         console.error("Sync Error:", e);
-        alert("Sync failed: Check Console for 403 errors. Make sure Gmail API is ENABLED in Google Cloud.");
+        alert(`Sync failed: ${e.message}`);
     } finally {
         if (btn) { btn.innerText = '手動同期'; btn.disabled = false; }
+    }
+}
+
+async function fetchChatMessages() {
+    try {
+        const spaceRes = await fetch('https://chat.googleapis.com/v1/spaces', {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        const spaceData = await spaceRes.json();
+        if (!spaceData.spaces) return [];
+
+        // Fetch messages from newest 5 spaces to avoid overhead
+        const spaces = spaceData.spaces.slice(0, 5);
+        const allMessages = [];
+
+        await Promise.all(spaces.map(async (s) => {
+            const msgRes = await fetch(`https://chat.googleapis.com/v1/${s.name}/messages?pageSize=10`, {
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            });
+            const msgData = await msgRes.json();
+            if (msgData.messages) {
+                msgData.messages.forEach(m => {
+                    allMessages.push({
+                        source: 'Chat',
+                        id: m.name, // "spaces/.../messages/..."
+                        snippet: m.text,
+                        from: m.sender?.displayName || 'Chat User',
+                        subject: s.displayName || 'Space',
+                        url: `https://mail.google.com/chat/u/0/#chat/${s.name.split('/').pop()}`
+                    });
+                });
+            }
+        }));
+        return allMessages;
+    } catch (e) {
+        console.warn("Chat fetch failed", e);
+        return [];
     }
 }
 
@@ -234,10 +283,12 @@ async function fetchGmailMessages() {
         const msg = await detailRes.json();
         const headers = msg.payload.headers;
         return {
+            source: 'Gmail',
             id: msg.id,
             snippet: msg.snippet,
             from: headers.find(h => h.name === 'From')?.value || 'Unknown',
-            subject: headers.find(h => h.name === 'Subject')?.value || 'No Subject'
+            subject: headers.find(h => h.name === 'Subject')?.value || 'No Subject',
+            url: `https://mail.google.com/mail/u/0/#inbox/${msg.threadId || msg.id}`
         };
     }));
     return messages;
@@ -252,14 +303,16 @@ async function analyzeWithGemini(messages) {
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${config.geminiKey}`;
     
     const prompt = `
-    Gmailの内容から「アクションが必要な宿題」を抽出してください。
-    抽出条件: ${config.criteria}
+    Analyze these Gmail and Chat messages and extract "ACTION REQUIRED" tasks.
+    Criteria: ${config.criteria}
     
-    フォーマット（JSON配列のみ）:
-    [{"source": "Gmail", "priority": "high|mid|low", "title": "Subject", "desc": "必要なアクション", "time": "Sender"}]
+    CRITICAL: For each task result, you MUST include the "refId" which is the exact "id" from the source message data.
     
-    データ:
-    ${JSON.stringify(messages.slice(0, 10))}
+    Output JSON aggregate array only:
+    [{"source": "Gmail|Chat", "priority": "high|mid|low", "title": "Subject", "desc": "Action", "time": "Sender", "refId": "original_id"}]
+    
+    Data:
+    ${JSON.stringify(messages.slice(0, 20))}
     `;
 
     try {
@@ -280,7 +333,13 @@ async function analyzeWithGemini(messages) {
         
         const text = raw.candidates[0].content.parts[0].text;
         const jsonMatch = text.match(/\[.*\]/s);
-        return jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+        let results = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+        
+        // Map original URLs back based on refId
+        return results.map(r => {
+            const original = messages.find(m => m.id === r.refId);
+            return { ...r, url: original ? original.url : '#' };
+        });
     } catch (e) {
         console.error("Gemini Error:", e);
         return [{ source: 'Error', priority: 'high', title: 'Gemini Technical Failure', desc: e.message }];
@@ -297,7 +356,7 @@ function renderTasks(tasks) {
     }
 
     list.innerHTML = tasks.map(task => `
-        <div class="task-card glass-panel priority-${task.priority || 'mid'}">
+        <div class="task-card glass-panel priority-${task.priority || 'mid'}" onclick="window.open('${task.url}', '_blank')" style="cursor: pointer;">
             <div class="task-header">
                 <span class="task-source">${task.source} • ${task.time || ''}</span>
                 <span style="font-size: 0.7rem; color: ${getPriorityColor(task.priority)};">Priority: ${String(task.priority).toUpperCase()}</span>
