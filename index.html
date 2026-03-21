@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Task Oracle | AI Workspace Assistant</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <!-- Google Identity Services -->
+    <script src="https://accounts.google.com/gsi/client" onload="initGis()" async defer></script>
+    <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()" async defer></script>
+</head>
+<body>
+    <div id="login-view" class="auth-container">
+        <h1 style="font-size: 3rem; font-weight: 700; margin-bottom: 0.5rem; background: linear-gradient(135deg, #fff, #94a3b8); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;">Google Task Oracle</h1>
+        <p style="color: var(--text-dim); margin-bottom: 2.5rem; max-width: 500px;">
+            Google Chat と Gmail から重要なアクションをAIが抽出し、優先順位を付けて整理します。<br>
+            GitHub Pages 上で動作する純粋なクライアントサイド・ツールです。
+        </p>
+        <button id="login-btn" class="btn" style="display: none;">Google でログイン</button>
+        <div id="setup-initial" style="margin-top: 1rem; color: var(--text-dim); font-size: 0.9rem;">
+            ※初めて利用する場合は Settings から Client ID と API Key を設定してください
+        </div>
+    </div>
+
+    <div id="app-view" class="dashboard" style="display: none;">
+        <div class="sidebar glass-panel">
+            <h2 style="margin-bottom: 2rem;">Menu</h2>
+            <nav style="display: flex; flex-direction: column; gap: 1rem;">
+                <div id="nav-tasks" style="cursor: pointer; padding: 10px; border-radius: 8px; background: rgba(255,255,255,0.05);">Tasks</div>
+                <div id="nav-settings" style="cursor: pointer; padding: 10px; border-radius: 8px;">Settings (AI条件設定)</div>
+                <div style="cursor: pointer; padding: 10px; border-radius: 8px;">History</div>
+                <hr style="border: 0; border-top: 1px solid var(--glass-border); margin: 1rem 0;">
+                <div id="sync-status" style="font-size: 0.8rem; color: var(--text-dim);">Last synced: Just now</div>
+                <button id="sync-btn" class="btn" style="margin-top: auto; padding: 8px 16px; font-size: 0.85rem;">手動同期</button>
+            </nav>
+        </div>
+        <div class="main-content">
+            <div id="header" style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1.5rem;">
+                <div>
+                    <h1 style="font-size: 1.75rem;">Your Oracle Feed</h1>
+                    <p style="color: var(--text-dim); font-size: 0.9rem;">AIが判断した重要アクションを表示しています</p>
+                </div>
+                <div style="text-align: right;">
+                    <div style="font-size: 0.9rem;">Hello, User</div>
+                    <div style="font-size: 0.7rem; color: var(--text-dim);">user@example.com</div>
+                </div>
+            </div>
+
+            <!-- Settings View (Hidden by default) -->
+            <div id="settings-view" class="glass-panel" style="display: none; padding: 24px; flex-direction: column; gap: 1.2rem; overflow-y: auto;">
+                <h2>設定 (Settings)</h2>
+                
+                <div class="setting-item">
+                    <label>Google Client ID</label>
+                    <input type="text" id="client-id-input" style="width:100%; padding:8px; border-radius:8px; background:rgba(0,0,0,0.2); border:1px solid var(--glass-border); color:white;">
+                    <p style="font-size:0.75rem; color:var(--text-dim);">Google Cloud Console で作成した Web アプリ用 ID</p>
+                </div>
+
+                <div class="setting-item">
+                    <label>Gemini API Key</label>
+                    <input type="password" id="gemini-key-input" style="width:100%; padding:8px; border-radius:8px; background:rgba(0,0,0,0.2); border:1px solid var(--glass-border); color:white;">
+                    <p style="font-size:0.75rem; color:var(--text-dim);">AI Studio で取得した API キー</p>
+                </div>
+
+                <div class="setting-item">
+                    <label>AI 抽出条件 (Prompt)</label>
+                    <textarea id="criteria-textarea" style="width: 100%; height: 100px; background: rgba(0,0,0,0.2); border: 1px solid var(--glass-border); border-radius: 12px; color: white; padding: 12px; font-family: inherit; font-size: 0.9rem;"></textarea>
+                </div>
+
+                <div style="display: flex; gap: 1rem;">
+                    <button id="save-settings-btn" class="btn">設定を保存</button>
+                    <button id="cancel-settings-btn" class="btn" style="background: transparent; border: 1px solid var(--glass-border);">キャンセル</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
