@@ -5,7 +5,7 @@ let gisInited = false;
 
 // Settings (persist in localStorage)
 let config = {
-    clientId: localStorage.getItem('google_client_id') || '',
+    clientId: localStorage.getItem('google_client_id') || '710668584134-j2bdh6dptd1d46uojgqofubfn70out0g.apps.googleusercontent.com',
     geminiKey: localStorage.getItem('gemini_api_key') || '',
     criteria: localStorage.getItem('extraction_criteria') || "質問、依頼、期限付きの連絡、自分が対応すべきタスク。"
 };
