@@ -11,7 +11,11 @@ let config = {
 };
 
 function gapiLoaded() { gapi.load('client', () => { gapiInited = true; checkBeforeLogin(); }); }
-function initGis() { checkBeforeLogin(); gisInited = true; }
+function initGis() { gisInited = true; checkBeforeLogin(); }
+
+// Assign to window to ensure global visibility for onload callbacks
+window.gapiLoaded = gapiLoaded;
+window.initGis = initGis;
 
 function checkBeforeLogin() {
     if (config.clientId) {
@@ -30,8 +34,41 @@ function checkBeforeLogin() {
     }
 }
 
-document.getElementById('login-btn').addEventListener('click', () => {
-    tokenClient.requestAccessToken({prompt: 'consent'});
+document.addEventListener('DOMContentLoaded', () => {
+    const loginBtn = document.getElementById('login-btn');
+    if (loginBtn) {
+        loginBtn.addEventListener('click', () => {
+            tokenClient.requestAccessToken({prompt: 'consent'});
+        });
+    }
+
+    // Navigation and other listeners
+    document.getElementById('nav-tasks').addEventListener('click', () => { showView('task-list'); setActiveNav('nav-tasks'); });
+    document.getElementById('nav-settings').addEventListener('click', () => {
+        showView('settings-view');
+        setActiveNav('nav-settings');
+        document.getElementById('client-id-input').value = config.clientId;
+        document.getElementById('gemini-key-input').value = config.geminiKey;
+        document.getElementById('criteria-textarea').value = config.criteria;
+    });
+
+    document.getElementById('save-settings-btn').addEventListener('click', () => {
+        config.clientId = document.getElementById('client-id-input').value;
+        config.geminiKey = document.getElementById('gemini-key-input').value;
+        config.criteria = document.getElementById('criteria-textarea').value;
+        
+        localStorage.setItem('google_client_id', config.clientId);
+        localStorage.setItem('gemini_api_key', config.geminiKey);
+        localStorage.setItem('extraction_criteria', config.criteria);
+        
+        alert("設定を保存しました。反映するにはページをリロードしてください。");
+        location.reload();
+    });
+
+    document.getElementById('cancel-settings-btn').addEventListener('click', () => { showView('task-list'); setActiveNav('nav-tasks'); });
+    
+    // Sync Logic
+    document.getElementById('sync-btn').addEventListener('click', syncTasks);
 });
 
 function onLoginSuccess() {
@@ -43,31 +80,6 @@ function onLoginSuccess() {
     }, 300);
 }
 
-// Navigation
-document.getElementById('nav-tasks').addEventListener('click', () => { showView('task-list'); setActiveNav('nav-tasks'); });
-document.getElementById('nav-settings').addEventListener('click', () => {
-    showView('settings-view');
-    setActiveNav('nav-settings');
-    document.getElementById('client-id-input').value = config.clientId;
-    document.getElementById('gemini-key-input').value = config.geminiKey;
-    document.getElementById('criteria-textarea').value = config.criteria;
-});
-
-document.getElementById('save-settings-btn').addEventListener('click', () => {
-    config.clientId = document.getElementById('client-id-input').value;
-    config.geminiKey = document.getElementById('gemini-key-input').value;
-    config.criteria = document.getElementById('criteria-textarea').value;
-    
-    localStorage.setItem('google_client_id', config.clientId);
-    localStorage.setItem('gemini_api_key', config.geminiKey);
-    localStorage.setItem('extraction_criteria', config.criteria);
-    
-    alert("設定を保存しました。反映するにはページをリロードしてください。");
-    location.reload();
-});
-
-document.getElementById('cancel-settings-btn').addEventListener('click', () => { showView('task-list'); setActiveNav('nav-tasks'); });
-
 function showView(viewId) {
     document.getElementById('task-list').style.display = viewId === 'task-list' ? 'block' : 'none';
     document.getElementById('settings-view').style.display = viewId === 'settings-view' ? 'flex' : 'none';
@@ -75,12 +87,12 @@ function showView(viewId) {
 
 function setActiveNav(navId) {
     ['nav-tasks', 'nav-settings'].forEach(id => {
-        document.getElementById(id).style.background = id === navId ? 'rgba(255,255,255,0.05)' : 'transparent';
+        const navEl = document.getElementById(id);
+        if (navEl) {
+            navEl.style.background = id === navId ? 'rgba(255,255,255,0.05)' : 'transparent';
+        }
     });
 }
-
-// Sync Logic
-document.getElementById('sync-btn').addEventListener('click', syncTasks);
 
 async function syncTasks() {
     const btn = document.getElementById('sync-btn');
