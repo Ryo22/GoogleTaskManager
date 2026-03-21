@@ -9,7 +9,8 @@ const config = {
     geminiKey: localStorage.getItem('gemini_api_key') || '',
     geminiModel: localStorage.getItem('gemini_model') || 'gemini-1.5-flash',
     criteria: localStorage.getItem('extraction_criteria') || "質問、依頼、内容確認の依頼、期限付きの連絡、自分が対応すべきタスク。ishigami|tlp|slp 宛のメールを重点的に。",
-    doneTasks: JSON.parse(localStorage.getItem('done_tasks') || '[]')
+    doneTasks: JSON.parse(localStorage.getItem('done_tasks') || '[]'),
+    archivedTasks: JSON.parse(localStorage.getItem('archived_tasks') || '[]')
 };
 
 let autoSyncInterval = null;
@@ -59,6 +60,7 @@ function checkBeforeLogin() {
 document.addEventListener('DOMContentLoaded', () => {
     // Nav & Settings listeners
     const navTasks = document.getElementById('nav-tasks');
+    const navArchive = document.getElementById('nav-archive');
     const navSettings = document.getElementById('nav-settings');
     const saveBtn = document.getElementById('save-settings-btn');
     const cancelBtn = document.getElementById('cancel-settings-btn');
@@ -72,79 +74,39 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    if (navTasks) navTasks.addEventListener('click', () => { showView('task-list'); setActiveNav('nav-tasks'); });
-    if (navSettings) navSettings.addEventListener('click', async () => {
-        showView('settings-view');
-        setActiveNav('nav-settings');
+    if (navTasks) navTasks.addEventListener('click', () => { showView('feed-view'); setActiveNav('nav-tasks'); });
+    if (navArchive) navArchive.addEventListener('click', () => { showView('archive-view'); setActiveNav('nav-archive'); renderArchive(); });
+    if (navSettings) navSettings.addEventListener('click', () => {
+        showView('settings-modal');
         document.getElementById('client-id-input').value = config.clientId;
         document.getElementById('gemini-key-input').value = config.geminiKey;
         document.getElementById('criteria-textarea').value = config.criteria;
-
-        const modelSelect = document.getElementById('gemini-model-select');
-        const customInput = document.getElementById('gemini-custom-model');
-        
-        // Restore custom value if it's not a standard initial option
-        const isInitial = ['gemini-1.5-flash', 'gemini-1.5-pro'].includes(config.geminiModel);
-        if (!isInitial && config.geminiModel) {
-            modelSelect.value = 'custom';
-            customInput.style.display = 'block';
-            customInput.value = config.geminiModel;
-        } else {
-            modelSelect.value = config.geminiModel || 'gemini-1.5-flash';
-        }
     });
 
-    const mSelect = document.getElementById('gemini-model-select');
-    if (mSelect) {
-        mSelect.addEventListener('change', (e) => {
-            const cInput = document.getElementById('gemini-custom-model');
-            cInput.style.display = e.target.value === 'custom' ? 'block' : 'none';
-        });
-    }
-
-    if (document.getElementById('fetch-models-btn')) {
-        document.getElementById('fetch-models-btn').addEventListener('click', async () => {
-            const key = document.getElementById('gemini-key-input').value;
-            if (!key) {
-                alert("Please enter a Gemini API Key first.");
-                return;
-            }
-            const btn = document.getElementById('fetch-models-btn');
-            btn.innerText = "取得中...";
-            await updateModelDropdown(key);
-            btn.innerText = "利用可能なモデルを取得";
-        });
-    }
+    if (cancelBtn) cancelBtn.addEventListener('click', () => { document.getElementById('settings-modal').style.display = 'none'; });
 
     if (saveBtn) {
         saveBtn.addEventListener('click', async () => {
-            const newClientId = document.getElementById('client-id-input').value;
-            const newKey = document.getElementById('gemini-key-input').value;
-            let newModel = document.getElementById('gemini-model-select').value;
-            if (newModel === 'custom') {
-                newModel = document.getElementById('gemini-custom-model').value.trim();
-            }
-            const newCriteria = document.getElementById('criteria-textarea').value;
+            config.clientId = document.getElementById('client-id-input').value;
+            config.geminiKey = document.getElementById('gemini-key-input').value;
+            let m = document.getElementById('gemini-model-select').value;
+            config.geminiModel = m === 'custom' ? document.getElementById('gemini-custom-model').value : m;
+            config.criteria = document.getElementById('criteria-textarea').value;
             
-            config.clientId = newClientId;
-            config.geminiKey = newKey;
-            config.geminiModel = newModel;
-            config.criteria = newCriteria;
-
-            localStorage.setItem('google_client_id', newClientId);
-            localStorage.setItem('gemini_api_key', newKey);
-            localStorage.setItem('gemini_model', newModel);
-            localStorage.setItem('extraction_criteria', newCriteria);
+            localStorage.setItem('google_client_id', config.clientId);
+            localStorage.setItem('gemini_api_key', config.geminiKey);
+            localStorage.setItem('gemini_model', config.geminiModel);
+            localStorage.setItem('extraction_criteria', config.criteria);
             
-            alert("Settings saved. Re-syncing tasks...");
-            showView('task-list');
-            setActiveNav('nav-tasks');
+            document.getElementById('settings-modal').style.display = 'none';
             syncTasks();
         });
     }
 
-    if (cancelBtn) cancelBtn.addEventListener('click', () => { showView('task-list'); setActiveNav('nav-tasks'); });
     if (syncBtn) syncBtn.addEventListener('click', syncTasks);
+    
+    const sendChatBtn = document.getElementById('send-chat-btn');
+    if (sendChatBtn) sendChatBtn.addEventListener('click', handleChat);
 });
 
 function onLoginSuccess() {
@@ -153,7 +115,7 @@ function onLoginSuccess() {
     if (loginView) loginView.style.opacity = '0';
     setTimeout(() => {
         if (loginView) loginView.style.display = 'none';
-        if (appView) appView.style.display = 'grid';
+        if (appView) appView.style.display = 'flex'; // Use flex for gmail container
         syncTasks();
         
         // Start auto-sync every 5 minutes
@@ -343,27 +305,28 @@ async function analyzeWithGemini(messages) {
     }
 }
 
-function renderTasks(tasks) {
-    const list = document.getElementById('task-list');
+function renderTasks(tasks, isArchive = false) {
+    const listId = isArchive ? 'archive-list' : 'task-list';
+    const list = document.getElementById(listId);
     if (!list) return;
     
     if (tasks.length === 0) {
-        list.innerHTML = '<div style="text-align:center; padding: 2rem; color:var(--text-dim);">No action items found. All clear!</div>';
+        list.innerHTML = `<div style="text-align:center; padding: 2rem; color:var(--gmail-text-dim);">${isArchive ? 'No archived tasks.' : 'No action items found. All clear!'}</div>`;
         return;
     }
 
     list.innerHTML = tasks.map(task => `
-        <div id="task-${task.refId}" class="task-card glass-panel priority-${task.priority || 'mid'}">
-            <div class="task-header" onclick="window.open('${task.url}', '_blank')" style="cursor: pointer; flex-grow: 1;">
-                <span class="task-source">${task.source} • ${task.time || ''}</span>
-                <span style="font-size: 0.7rem; color: ${getPriorityColor(task.priority)};">Priority: ${String(task.priority).toUpperCase()}</span>
+        <div id="${isArchive ? 'arch-' : 'task-'}${task.refId}" class="task-row unread priority-${task.priority || 'mid'}">
+            <div class="sender" onclick="window.open('${task.url}', '_blank')">${task.time || 'Unknown'}</div>
+            <div class="title-snippet" onclick="window.open('${task.url}', '_blank')">
+                <b>${task.title}</b> - <span>${task.desc}</span>
             </div>
-            <div onclick="window.open('${task.url}', '_blank')" style="cursor: pointer;">
-                <div class="task-title">${task.title}</div>
-                <p class="task-desc">${task.desc}</p>
-            </div>
-            <div style="margin-top: 1rem; border-top: 1px solid var(--glass-border); padding-top: 0.8rem; display: flex; justify-content: flex-end;">
-                <button onclick="dismissTask('${task.refId}')" class="btn" style="padding: 4px 12px; font-size: 0.7rem; background: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e; color: #4ade80;">完了にする</button>
+            <div class="date">${isArchive ? '' : 'Now'}</div>
+            <div class="actions">
+                ${isArchive ? 
+                    `<button onclick="restoreTask('${task.refId}')" class="action-icon" title="Restore" style="border:none;background:none;font-size:18px;">⟲</button>` :
+                    `<button onclick="dismissTask('${task.refId}')" class="action-icon" title="Done" style="border:none;background:none;font-size:18px;">✓</button>`
+                }
             </div>
         </div>
     `).join('');
@@ -374,11 +337,22 @@ function renderFilteredTasks() {
     renderTasks(filtered);
 }
 
+function renderArchive() {
+    renderTasks(config.archivedTasks, true);
+}
+
 window.dismissTask = function(id) {
     if (!config.doneTasks.includes(id)) {
         config.doneTasks.push(id);
         localStorage.setItem('done_tasks', JSON.stringify(config.doneTasks));
         
+        // Save to archive storage
+        const task = lastFetchedTasks.find(t => t.refId === id);
+        if (task) {
+            config.archivedTasks.unshift(task);
+            localStorage.setItem('archived_tasks', JSON.stringify(config.archivedTasks.slice(0, 50)));
+        }
+
         // Immediate visual feedback: Hide the element
         const el = document.getElementById(`task-${id}`);
         if (el) {
@@ -389,6 +363,70 @@ window.dismissTask = function(id) {
             renderFilteredTasks();
         }
     }
+}
+
+window.restoreTask = function(id) {
+    config.doneTasks = config.doneTasks.filter(tid => tid !== id);
+    config.archivedTasks = config.archivedTasks.filter(t => t.refId !== id);
+    localStorage.setItem('done_tasks', JSON.stringify(config.doneTasks));
+    localStorage.setItem('archived_tasks', JSON.stringify(config.archivedTasks));
+    renderArchive();
+    renderFilteredTasks();
+}
+
+async function handleChat() {
+    const input = document.getElementById('chat-input');
+    const history = document.getElementById('chat-history');
+    const query = input.value.trim();
+    if (!query) return;
+
+    // Add user message to UI
+    appendChatMessage('user', query);
+    input.value = '';
+
+    const modelName = config.geminiModel === 'custom' ? 
+        document.getElementById('gemini-custom-model').value : config.geminiModel;
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${config.geminiKey}`;
+
+    const context = `
+    You are an AI assistant analyzing the following tasks from the user's Gmail.
+    Tasks: ${JSON.stringify(lastFetchedTasks.slice(0, 20))}
+    Answer the user's question based on this context. 
+    Use Japanese.
+    `;
+
+    try {
+        const res = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: [{ parts: [{ text: `${context}\n\nUser: ${query}` }] }] })
+        });
+        const raw = await res.json();
+        const responseText = raw.candidates[0].content.parts[0].text;
+        appendChatMessage('ai', responseText);
+    } catch (e) {
+        appendChatMessage('ai', "Error: " + e.message);
+    }
+}
+
+function appendChatMessage(role, text) {
+    const history = document.getElementById('chat-history');
+    const msg = document.createElement('div');
+    msg.style.padding = '10px 14px';
+    msg.style.borderRadius = '12px';
+    msg.style.maxWidth = '85%';
+    if (role === 'user') {
+        msg.style.alignSelf = 'flex-end';
+        msg.style.background = 'rgba(99, 102, 241, 0.2)';
+        msg.style.border = '1px solid var(--primary-glow)';
+    } else {
+        msg.style.alignSelf = 'flex-start';
+        msg.style.background = 'rgba(255, 255, 255, 0.05)';
+        msg.style.border = '1px solid var(--glass-border)';
+    }
+    msg.innerText = text;
+    history.appendChild(msg);
+    history.scrollTop = history.scrollHeight;
 }
 
 function getPriorityColor(p) {
