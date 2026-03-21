@@ -75,7 +75,28 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('client-id-input').value = config.clientId;
         document.getElementById('gemini-key-input').value = config.geminiKey;
         document.getElementById('criteria-textarea').value = config.criteria;
+
+        const modelSelect = document.getElementById('gemini-model-select');
+        const customInput = document.getElementById('gemini-custom-model');
+        
+        // Restore custom value if it's not a standard initial option
+        const isInitial = ['gemini-1.5-flash', 'gemini-1.5-pro'].includes(config.geminiModel);
+        if (!isInitial && config.geminiModel) {
+            modelSelect.value = 'custom';
+            customInput.style.display = 'block';
+            customInput.value = config.geminiModel;
+        } else {
+            modelSelect.value = config.geminiModel || 'gemini-1.5-flash';
+        }
     });
+
+    const mSelect = document.getElementById('gemini-model-select');
+    if (mSelect) {
+        mSelect.addEventListener('change', (e) => {
+            const cInput = document.getElementById('gemini-custom-model');
+            cInput.style.display = e.target.value === 'custom' ? 'block' : 'none';
+        });
+    }
 
     if (document.getElementById('fetch-models-btn')) {
         document.getElementById('fetch-models-btn').addEventListener('click', async () => {
@@ -88,7 +109,6 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.innerText = "取得中...";
             await updateModelDropdown(key);
             btn.innerText = "利用可能なモデルを取得";
-            alert("利用可能なモデルをロードしました。");
         });
     }
 
@@ -96,15 +116,18 @@ document.addEventListener('DOMContentLoaded', () => {
         saveBtn.addEventListener('click', () => {
             const newClientId = document.getElementById('client-id-input').value;
             const newKey = document.getElementById('gemini-key-input').value;
-            const newModel = document.getElementById('gemini-model-select').value;
+            let newModel = document.getElementById('gemini-model-select').value;
+            if (newModel === 'custom') {
+                newModel = document.getElementById('gemini-custom-model').value.trim();
+            }
             const newCriteria = document.getElementById('criteria-textarea').value;
             
             localStorage.setItem('google_client_id', newClientId);
             localStorage.setItem('gemini_api_key', newKey);
-            localStorage.setItem('gemini_model', newModel || 'gemini-1.5-flash');
+            localStorage.setItem('gemini_model', newModel);
             localStorage.setItem('extraction_criteria', newCriteria);
             
-            alert("Success: Saved. Reloading page...");
+            alert("Settings saved. Page will reload.");
             location.reload();
         });
     }
@@ -144,26 +167,33 @@ async function updateModelDropdown(providedKey) {
     if (!select || !keyToUse) return;
 
     try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${keyToUse}`);
+        // Use v1beta for listing as it often includes preview models
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${keyToUse}`);
         const data = await response.json();
         
         if (data.error) {
-            alert("Error fetching models: " + data.error.message);
+            alert("API Error: " + data.error.message);
             return;
         }
 
         if (data.models) {
+            console.log("Raw Models Data:", data.models);
             const currentSelected = config.geminiModel;
-            select.innerHTML = data.models
-                .filter(m => m.supportedGenerationMethods.includes('generateContent'))
-                .map(m => {
-                    const id = m.name.split('/').pop();
-                    return `<option value="${id}" ${id === currentSelected ? 'selected' : ''}>${m.displayName} (${id})</option>`;
-                }).join('');
+            const options = data.models.map(m => {
+                const id = m.name.split('/').pop();
+                return `<option value="${id}" ${id === currentSelected ? 'selected' : ''}>${m.displayName} (${id})</option>`;
+            });
+            
+            select.innerHTML = `
+                <option value="gemini-1.5-flash">gemini-1.5-flash (Default)</option>
+                ${options.join('')}
+                <option value="custom">-- カスタムIDを手動入力 --</option>
+            `;
+            alert(`利用可能モデル ${data.models.length} 件 をロードしました。リストになければカスタムIDを使ってください。`);
         }
     } catch (e) {
         console.error("Failed to fetch models", e);
-        alert("取得に失敗しました。APIキーまたはインターネット接続を確認してください。");
+        alert("取得失敗。APIキーまたはネットワークを確認してください。");
     }
 }
 
@@ -215,22 +245,25 @@ async function fetchGmailMessages() {
 
 async function analyzeWithGemini(messages) {
     if (messages.length === 0) return [];
-    if (!config.geminiKey) return [{ source: 'System', priority: 'mid', title: 'API Key Missing', desc: 'Please set Gemini API Key in Settings.' }];
+    if (!config.geminiKey) return [{ source: 'System', priority: 'mid', title: 'API Key Missing', desc: 'Settingsから設定してください。' }];
 
     const modelName = config.geminiModel || 'gemini-1.5-flash';
+    // Use v1beta endpoint as default to support latest/preview models
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${config.geminiKey}`;
+    
     const prompt = `
-    Analyze the following unread Gmail messages and extract "ACTION REQUIRED" items.
-    Extraction Criteria: ${config.criteria}
+    Gmailの内容から「アクションが必要な宿題」を抽出してください。
+    抽出条件: ${config.criteria}
     
-    Output JSON aggregate (Strictly JSON array only):
-    [{"source": "Gmail", "priority": "high|mid|low", "title": "Subject", "desc": "Detailed action needed", "time": "Sender"}]
+    フォーマット（JSON配列のみ）:
+    [{"source": "Gmail", "priority": "high|mid|low", "title": "Subject", "desc": "必要なアクション", "time": "Sender"}]
     
-    Messages:
+    データ:
     ${JSON.stringify(messages.slice(0, 10))}
     `;
 
     try {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1/models/${modelName}:generateContent?key=${config.geminiKey}`, {
+        const res = await fetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })

@@ -70,10 +70,12 @@
                     <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
                         <button id="fetch-models-btn" class="btn" style="padding: 6px 12px; font-size: 0.75rem; background: rgba(99, 102, 241, 0.2); border: 1px solid var(--primary-glow);">利用可能なモデルを取得</button>
                     </div>
-                    <select id="gemini-model-select" style="width:100%; padding:8px; border-radius:8px; background:rgba(0,0,0,0.2); border:1px solid var(--glass-border); color:white; font-family:inherit;">
-                        <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                    <select id="gemini-model-select" style="width:100%; padding:8px; border-radius:8px; background:rgba(0,0,0,0.2); border:1px solid var(--glass-border); color:white; font-family:inherit; margin-bottom: 0.5rem;">
+                        <option value="gemini-1.5-flash">gemini-1.5-flash (Default)</option>
+                        <option value="custom">-- カスタムIDを手動入力 --</option>
                     </select>
-                    <p style="font-size:0.75rem; color:var(--text-dim);">APIキーに基づき、最新の利用可能モデルを表示します</p>
+                    <input type="text" id="gemini-custom-model" placeholder="Model ID (例: gemini-3.1-flash-lite)" style="display:none; width:100%; padding:8px; border-radius:8px; background:rgba(0,0,0,0.2); border:1px solid var(--glass-border); color:white; margin-bottom: 0.5rem;">
+                    <p style="font-size:0.75rem; color:var(--text-dim);">※「利用可能なモデルを取得」でリストが更新されます。現れない場合はカスタムIDを入力してください。</p>
                 </div>
 
                 <div class="setting-item">
