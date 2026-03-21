@@ -285,8 +285,8 @@ async function fetchChatMessages() {
 }
 
 async function fetchGmailMessages() {
-    // Fetch more results: 50 instead of 15, and broader search for recent unread
-    const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=50&q=label:unread OR label:inbox -label:sent', {
+    // Broad search: Anything in inbox from the last 7 days (read or unread)
+    const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=100&q=label:inbox newer_than:7d', {
         headers: { 'Authorization': `Bearer ${accessToken}` }
     });
     // Check for 403 Forbidden
