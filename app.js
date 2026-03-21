@@ -285,7 +285,8 @@ async function fetchChatMessages() {
 }
 
 async function fetchGmailMessages() {
-    const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=15&q=is:unread', {
+    // Fetch more results: 50 instead of 15, and broader search for recent unread
+    const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=50&q=label:unread OR label:inbox -label:sent', {
         headers: { 'Authorization': `Bearer ${accessToken}` }
     });
     // Check for 403 Forbidden
@@ -322,16 +323,19 @@ async function analyzeWithGemini(messages) {
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${config.geminiKey}`;
     
     const prompt = `
-    Analyze these Gmail and Chat messages and extract "ACTION REQUIRED" tasks.
+    Analyze these Gmail and Chat messages and extract EVERY "ACTION REQUIRED" task.
     Criteria: ${config.criteria}
     
-    CRITICAL: For each task result, you MUST include the "refId" which is the exact "id" from the source message data.
+    CRITICAL INSTRUCTIONS:
+    - DO NOT limit the output. If there are many tasks, list them all (up to 20-30 items).
+    - For each task, provide a CONCRETE and DETAILED action (e.g., "Reply to [Name] about [Subject] by tomorrow morning" instead of just "Check email").
+    - You MUST include the "refId" which is the exact "id" from the source message data.
     
     Output JSON aggregate array only:
-    [{"source": "Gmail|Chat", "priority": "high|mid|low", "title": "Subject", "desc": "Action", "time": "Sender", "refId": "original_id"}]
+    [{"source": "Gmail|Chat", "priority": "high|mid|low", "title": "Specific Task Title", "desc": "Detailed Step-by-Step Action", "time": "Sender/Time", "refId": "original_id"}]
     
     Data:
-    ${JSON.stringify(messages.slice(0, 20))}
+    ${JSON.stringify(messages.slice(0, 40))}
     `;
 
     try {
