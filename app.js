@@ -34,7 +34,7 @@ function checkBeforeLogin() {
     if (config.clientId && gisInited) {
         tokenClient = google.accounts.oauth2.initTokenClient({
             client_id: config.clientId,
-            scope: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/chat.messages.readonly',
+            scope: 'https://www.googleapis.com/auth/gmail.readonly',
             callback: (resp) => {
                 if (resp.error) {
                     console.error("Token error:", resp);
@@ -210,13 +210,8 @@ async function syncTasks() {
     if (btn) { btn.innerText = 'Syncing...'; btn.disabled = true; }
 
     try {
-        const [gmailMsgs, chatMsgs] = await Promise.all([
-            fetchGmailMessages(),
-            fetchChatMessages()
-        ]);
-        
-        const combined = [...gmailMsgs, ...chatMsgs];
-        const tasks = await analyzeWithGemini(combined);
+        const gmailMsgs = await fetchGmailMessages();
+        const tasks = await analyzeWithGemini(gmailMsgs);
         renderTasks(tasks);
         const status = document.getElementById('sync-status');
         if (status) status.innerText = `Last synced: ${new Date().toLocaleTimeString()}`;
@@ -228,61 +223,6 @@ async function syncTasks() {
     }
 }
 
-async function fetchChatMessages() {
-    try {
-        console.log("Fetching spaces...");
-        const spaceRes = await fetch('https://chat.googleapis.com/v1/spaces?pageSize=100', {
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
-        
-        if (spaceRes.status === 403) {
-            console.warn("Chat API Access Forbidden. Check OAuth Scopes or Chat API configuration.");
-            return []; // Fail silently but log
-        }
-
-        const spaceData = await spaceRes.json();
-        if (spaceData.error) {
-            console.error("Chat API Error:", spaceData.error);
-            return [];
-        }
-
-        if (!spaceData.spaces || spaceData.spaces.length === 0) {
-            console.log("No Chat spaces found.");
-            return [];
-        }
-
-        const spaces = spaceData.spaces.slice(0, 10);
-        const allMessages = [];
-
-        await Promise.all(spaces.map(async (s) => {
-            try {
-                const msgRes = await fetch(`https://chat.googleapis.com/v1/${s.name}/messages?pageSize=20`, {
-                    headers: { 'Authorization': `Bearer ${accessToken}` }
-                });
-                const msgData = await msgRes.json();
-                if (msgData.messages) {
-                    msgData.messages.forEach(m => {
-                        allMessages.push({
-                            source: 'Chat',
-                            id: m.name,
-                            snippet: m.text || '(No text)',
-                            from: m.sender?.displayName || 'Chat User',
-                            subject: s.displayName || 'Space',
-                            url: `https://mail.google.com/chat/u/0/#chat/${s.name.split('/').pop()}`
-                        });
-                    });
-                }
-            } catch (e) {
-                console.warn(`Failed to fetch messages for space ${s.name}`, e);
-            }
-        }));
-        console.log(`Fetched ${allMessages.length} chat messages.`);
-        return allMessages;
-    } catch (e) {
-        console.error("Chat fetch general error", e);
-        return [];
-    }
-}
 
 async function fetchGmailMessages() {
     // Broad search: Anything in inbox from the last 7 days (read or unread)
@@ -342,7 +282,7 @@ async function analyzeWithGemini(messages) {
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${config.geminiKey}`;
     
     const prompt = `
-    Analyze these Gmail and Chat messages and extract EVERY "ACTION REQUIRED" task.
+    Analyze these Gmail messages and extract EVERY "ACTION REQUIRED" task.
     Criteria: ${config.criteria}
     
     CRITICAL INSTRUCTIONS:
@@ -351,7 +291,7 @@ async function analyzeWithGemini(messages) {
     - You MUST include the "refId" which is the exact "id" from the source message data.
     
     Output JSON aggregate array only:
-    [{"source": "Gmail|Chat", "priority": "high|mid|low", "title": "Specific Task Title", "desc": "Detailed Step-by-Step Action", "time": "Sender/Time", "refId": "original_id"}]
+    [{"source": "Gmail", "priority": "high|mid|low", "title": "Specific Task Title", "desc": "Detailed Step-by-Step Action", "time": "Sender/Time", "refId": "original_id"}]
     
     Data:
     ${JSON.stringify(messages.slice(0, 40))}
