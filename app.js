@@ -83,13 +83,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (navTasks) navTasks.addEventListener('click', () => { showView('feed-view'); setActiveNav('nav-tasks'); });
     if (navArchive) navArchive.addEventListener('click', () => { showView('archive-view'); setActiveNav('nav-archive'); renderArchive(); });
     if (navSettings) navSettings.addEventListener('click', () => {
-        showView('settings-modal');
+        const modal = document.getElementById('settings-modal');
+        if (modal) modal.style.display = 'flex';
+        
+        // Also populate values
         const ci = document.getElementById('client-id-input');
         const gk = document.getElementById('gemini-key-input');
         const ct = document.getElementById('criteria-textarea');
-        if (ci) ci.value = config.clientId;
-        if (gk) gk.value = config.geminiKey;
-        if (ct) ct.value = config.criteria;
+        if (ci) ci.value = config.clientId || '';
+        if (gk) gk.value = config.geminiKey || '';
+        if (ct) ct.value = config.criteria || '';
+        
+        setActiveNav('nav-settings');
     });
 
     if (cancelBtn) cancelBtn.addEventListener('click', () => { document.getElementById('settings-modal').style.display = 'none'; });
