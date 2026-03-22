@@ -389,61 +389,86 @@ async function fetchGmailMessages() {
     return all;
 }
 
-async function analyzeWithGemini(messages) {
-    if (messages.length === 0) return [];
-    if (!config.geminiKey) return [{
-        source: 'System', priority: 'mid', title: 'API Key Missing', desc: 'Settingsから設定してください。'
-    }];
+// JSON 抽出：そのまま → 配列部分のみ → 空配列の順でフォールバック
+function extractJsonArray(text) {
+    try { return JSON.parse(text.trim()); } catch {}
+    const m = text.match(/\[[\s\S]*\]/);
+    if (m) { try { return JSON.parse(m[0]); } catch {} }
+    return [];
+}
 
-    const modelName = config.geminiModel || 'gemini-1.5-flash';
-    const apiUrl    = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${config.geminiKey}`;
-
+// 1バッチ分の Gemini 呼び出し
+async function analyzeOneBatch(apiUrl, batch, allMessages) {
     const prompt = `
     以下のメールリストを分析し、「対応が必要なタスク」を漏れなく抽出してください。
 
-    ■ 抽出基準（優先順位）：
-    1. 質問、依頼、内容確認などの依頼
-    2. 総合的に見て対応が必要と思われる、または少しでも対応が必要そうなタスク（迷う場合は抽出に含める）
-    3. 返信や確認を放置すると問題になりそうな連絡
+    ■ 抽出基準：
+    1. 質問・依頼・内容確認など返信が必要なもの
+    2. 少しでも対応が必要と思われるもの（迷う場合は含める）
+    3. 放置すると問題になりそうな連絡
 
     ■ ユーザー独自の抽出要件:
     ${config.criteria}
 
-    ■ 出力形式 (JSON 配列のみ、他のテキストは一切含めないこと):
-    [{"source": "Gmail", "priority": "high|mid|low", "title": "アクションの要約（動詞から始める）", "desc": "具体的な対応内容", "deadline": "今日中／明日中／今週中／〇月〇日まで／期限不明 のいずれか", "time": "From/Date", "refId": "id"}]
+    ■ 出力形式 (JSON 配列のみ。前後に説明文を一切つけないこと):
+    [{"source":"Gmail","priority":"high|mid|low","title":"動詞から始めるアクション要約","desc":"具体的な対応内容","deadline":"今日中／明日中／今週中／〇月〇日まで／期限不明","time":"差出人 / 受信日","refId":"id"}]
 
-    ■ データ (JSON):
-    ${JSON.stringify(messages.slice(0, 400))}
+    ■ メールデータ (JSON):
+    ${JSON.stringify(batch)}
     `;
 
     try {
         const res = await fetch(apiUrl, {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+            body:    JSON.stringify({
+                contents:         [{ parts: [{ text: prompt }] }],
+                generationConfig: { maxOutputTokens: 8192 }
+            })
         });
         const raw = await res.json();
+        if (raw.error) { console.error('Gemini batch error', raw.error.message); return []; }
+        if (!raw.candidates?.length) return [];
 
-        if (raw.error) {
-            return [{ source: 'Error', priority: 'high', title: 'Gemini API Error', desc: raw.error.message }];
-        }
-
-        if (!raw.candidates || raw.candidates.length === 0) {
-            return [{ source: 'Error', priority: 'high', title: 'AI Analysis Blocked', desc: 'AIが内容の分析を拒否しました。内容が長すぎるか、安全フィルターに制限された可能性があります。' }];
-        }
-
-        const text      = raw.candidates[0].content.parts[0].text;
-        const jsonMatch = text.match(/\[.*\]/s);
-        const results   = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
-
+        const text    = raw.candidates[0].content.parts[0].text;
+        const results = extractJsonArray(text);
         return results.map(r => {
-            const original = messages.find(m => m.id === r.refId);
-            return { ...r, url: original ? original.url : '#' };
+            const orig = allMessages.find(m => m.id === r.refId);
+            return { ...r, url: orig ? orig.url : '#' };
         });
     } catch (e) {
-        console.error("Gemini Error:", e);
-        return [{ source: 'Error', priority: 'high', title: 'Gemini Technical Failure', desc: e.message }];
+        console.error('analyzeOneBatch error', e);
+        return [];
     }
+}
+
+async function analyzeWithGemini(messages) {
+    if (messages.length === 0) return [];
+    if (!config.geminiKey) return [{
+        source: 'System', priority: 'mid', title: 'API Key Missing', desc: 'Settingsから設定してください。'
+    }];
+
+    const modelName = config.geminiModel || 'gemini-2.0-flash-lite';
+    const apiUrl    = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${config.geminiKey}`;
+
+    // 150件ずつバッチ（最大450件 = 3バッチ）
+    const BATCH_SIZE = 150;
+    const targets    = messages.slice(0, 450);
+    const batches    = [];
+    for (let i = 0; i < targets.length; i += BATCH_SIZE) {
+        batches.push(targets.slice(i, i + BATCH_SIZE));
+    }
+
+    const allResults = [];
+    for (let b = 0; b < batches.length; b++) {
+        setSyncStatus(`AI分析中... バッチ ${b + 1} / ${batches.length}（計 ${targets.length} 件）`);
+        const results = await analyzeOneBatch(apiUrl, batches[b], messages);
+        allResults.push(...results);
+        // バッチ間にウェイト（レートリミット対策）
+        if (b < batches.length - 1) await new Promise(r => setTimeout(r, 1200));
+    }
+
+    return allResults;
 }
 
 // ===== Render =====
