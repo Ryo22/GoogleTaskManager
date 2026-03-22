@@ -63,6 +63,13 @@
                         <button class="filter-chip" data-type="deadline" data-value="thisweek" onclick="setFilter('deadline', 'thisweek')">今週中</button>
                         <button class="filter-chip" data-type="deadline" data-value="unknown"  onclick="setFilter('deadline', 'unknown')">期限不明</button>
                     </div>
+                    <div class="filter-sep"></div>
+                    <div class="filter-group">
+                        <span class="filter-label">並び替え</span>
+                        <button class="sort-chip filter-chip active" data-value="date-desc" onclick="setSort('date-desc')">新しい順</button>
+                        <button class="sort-chip filter-chip"        data-value="date-asc"  onclick="setSort('date-asc')">古い順</button>
+                        <button class="sort-chip filter-chip"        data-value="priority"  onclick="setSort('priority')">優先度順</button>
+                    </div>
                 </div>
 
                 <div id="task-list" class="task-list"></div>
@@ -137,12 +144,20 @@
                     <label class="setting-label">Supabase テーブル初期化 SQL</label>
                     <div class="setting-desc">Supabase ダッシュボード → SQL Editor で以下を1度だけ実行してください。</div>
                     <div class="sql-block">
-                        <pre id="setup-sql">CREATE TABLE IF NOT EXISTS gmail_messages (
+                        <pre id="setup-sql">-- メールキャッシュ
+CREATE TABLE IF NOT EXISTS gmail_messages (
   id        TEXT PRIMARY KEY,
   data      JSONB NOT NULL,
   cached_at TIMESTAMPTZ DEFAULT NOW()
 );
-ALTER TABLE gmail_messages DISABLE ROW LEVEL SECURITY;</pre>
+ALTER TABLE gmail_messages DISABLE ROW LEVEL SECURITY;
+
+-- タスク保存（起動時に再利用）
+CREATE TABLE IF NOT EXISTS app_state (
+  key   TEXT PRIMARY KEY,
+  value JSONB NOT NULL
+);
+ALTER TABLE app_state DISABLE ROW LEVEL SECURITY;</pre>
                         <button onclick="copySql()" class="btn-outline sql-copy-btn" id="sql-copy-btn">コピー</button>
                     </div>
                 </div>

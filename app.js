@@ -21,8 +21,9 @@ const config = {
 let autoSyncInterval = null;
 let lastFetchedTasks = []; // Cache for current tasks
 
-// ===== Filters =====
+// ===== Filters & Sort =====
 const activeFilters = { priority: null, deadline: null };
+let   activeSort    = 'date-desc'; // 'date-desc' | 'date-asc' | 'priority'
 
 function applyFilters(tasks) {
     return tasks.filter(t => {
@@ -36,6 +37,25 @@ function applyFilters(tasks) {
         return true;
     });
 }
+
+function applySort(tasks) {
+    const priorityOrder = { high: 0, mid: 1, low: 2 };
+    const toMs = t => t.receivedDate ? new Date(t.receivedDate).getTime() : 0;
+    const copy  = [...tasks];
+    if (activeSort === 'date-desc') return copy.sort((a, b) => toMs(b) - toMs(a));
+    if (activeSort === 'date-asc')  return copy.sort((a, b) => toMs(a) - toMs(b));
+    if (activeSort === 'priority')  return copy.sort((a, b) =>
+        (priorityOrder[a.priority] ?? 9) - (priorityOrder[b.priority] ?? 9) || toMs(b) - toMs(a));
+    return copy;
+}
+
+window.setSort = function(value) {
+    activeSort = value;
+    document.querySelectorAll('.sort-chip').forEach(el =>
+        el.classList.toggle('active', el.dataset.value === value)
+    );
+    renderFilteredTasks();
+};
 
 window.setFilter = function(type, value) {
     activeFilters[type] = (activeFilters[type] === value) ? null : value;
@@ -322,6 +342,54 @@ function closeModal(id) {
     if (el) el.classList.remove('open');
 }
 
+// ===== DB persistence for tasks =====
+async function loadTasksFromDB() {
+    if (!config.supabaseUrl || !config.supabaseKey) return null;
+    try {
+        const res = await fetch(
+            `${config.supabaseUrl}/rest/v1/app_state?key=eq.tasks&select=value`,
+            { headers: sbHeaders() }
+        );
+        if (!res.ok) return null;
+        const rows = await res.json();
+        return rows.length ? rows[0].value : null;
+    } catch (e) { console.warn('loadTasksFromDB error', e); return null; }
+}
+
+async function saveTasksToDB(tasks) {
+    if (!config.supabaseUrl || !config.supabaseKey) return;
+    try {
+        await fetch(`${config.supabaseUrl}/rest/v1/app_state`, {
+            method:  'POST',
+            headers: sbHeaders({ 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
+            body:    JSON.stringify({ key: 'tasks', value: { tasks, synced_at: new Date().toISOString() } })
+        });
+    } catch (e) { console.warn('saveTasksToDB error', e); }
+}
+
+async function reloadFromDB() {
+    const data = await loadTasksFromDB();
+    if (data?.tasks?.length) {
+        lastFetchedTasks = data.tasks;
+        renderFilteredTasks();
+    }
+}
+
+async function loadAndDisplayTasks() {
+    setSyncStatus('データを読み込み中...');
+    const data = await loadTasksFromDB();
+    if (data?.tasks?.length) {
+        lastFetchedTasks = data.tasks;
+        renderFilteredTasks();
+        const t = data.synced_at
+            ? new Date(data.synced_at).toLocaleString('ja-JP', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' })
+            : '不明';
+        setSyncStatus(`最終同期: ${t}　(↻ で再取得)`);
+    } else {
+        await syncTasks(); // DB にデータなし → 初回同期
+    }
+}
+
 // ===== View / Nav =====
 function onLoginSuccess() {
     const loginView = document.getElementById('login-view');
@@ -330,9 +398,9 @@ function onLoginSuccess() {
     setTimeout(() => {
         if (loginView) loginView.classList.add('hidden');
         if (appView)   appView.classList.remove('hidden');
-        syncTasks();
+        loadAndDisplayTasks();                                // API を呼ばず DB から読む
         if (autoSyncInterval) clearInterval(autoSyncInterval);
-        autoSyncInterval = setInterval(syncTasks, 5 * 60 * 1000);
+        autoSyncInterval = setInterval(reloadFromDB, 5 * 60 * 1000); // DB 読み込みのみ
     }, 300);
 }
 
@@ -404,6 +472,7 @@ async function syncTasks() {
 
         lastFetchedTasks = tasks;
         renderFilteredTasks();
+        await saveTasksToDB(tasks);  // Supabase に保存（次回起動時に再利用）
         setSyncStatus(`完了 ${new Date().toLocaleTimeString()} (${gmailMsgs.length}件分析 / ${tasks.length}件検出)`);
     } catch (err) {
         console.error("Sync failed:", err);
@@ -583,22 +652,18 @@ async function analyzeWithGemini(messages, onProgress) {
 
 // ===== Render =====
 
-// 受信日時を相対表示にフォーマット
+// 受信日時を「M/D HH:mm」形式で表示
 function formatReceivedDate(dateStr) {
     if (!dateStr) return '';
     try {
-        const d    = new Date(dateStr);
+        const d = new Date(dateStr);
         if (isNaN(d)) return dateStr;
-        const now  = new Date();
-        const diff = now - d;
-        const days = Math.floor(diff / 86400000);
+        const m    = d.getMonth() + 1;
+        const dd   = d.getDate();
         const hhmm = d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-
-        if (days === 0) return `今日 ${hhmm}`;
-        if (days === 1) return `昨日 ${hhmm}`;
-        if (days  <  7) return `${days}日前 ${hhmm}`;
-        const m = d.getMonth() + 1, dd = d.getDate();
-        return `${m}/${dd}`;
+        const yr   = d.getFullYear();
+        const now  = new Date();
+        return yr === now.getFullYear() ? `${m}/${dd} ${hhmm}` : `${yr}/${m}/${dd}`;
     } catch { return dateStr; }
 }
 
@@ -677,7 +742,7 @@ function renderTasks(tasks, isArchive = false) {
 }
 
 function renderFilteredTasks() {
-    renderTasks(applyFilters(lastFetchedTasks));
+    renderTasks(applySort(applyFilters(lastFetchedTasks)));
 }
 
 function renderArchive() {
