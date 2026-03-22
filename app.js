@@ -248,13 +248,18 @@ async function syncTasks() {
         lastFetchedTasks = tasks;
         renderFilteredTasks();
 
-        const status = document.getElementById('sync-status');
-        if (status) status.innerText = `Auto-Sync Active (Last: ${new Date().toLocaleTimeString()})`;
-    } catch (e) {
-        console.error("Sync Error:", e);
-        alert(`Sync failed: ${e.message}`);
+        const statusEl = document.getElementById('sync-status');
+        if (statusEl) statusEl.innerText = `Auto-Sync: OK (${new Date().toLocaleTimeString()})`;
+    } catch (err) {
+        console.error("Sync failed:", err);
+        const statusEl = document.getElementById('sync-status');
+        if (statusEl) statusEl.innerText = "Sync Error";
     } finally {
-        if (btn) { btn.innerText = '手動同期'; btn.disabled = false; }
+        const syncBtn = document.getElementById('sync-btn');
+        if (syncBtn) {
+            syncBtn.classList.remove('spinning');
+            syncBtn.disabled = false;
+        }
     }
 }
 
