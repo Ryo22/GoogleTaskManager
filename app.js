@@ -274,7 +274,7 @@ async function fetchGmailMessages() {
         if (!data.messages) return [];
 
         const messages   = [];
-        const messageIds = data.messages.slice(0, 100);
+        const messageIds = data.messages.slice(0, 150);
 
         for (let i = 0; i < messageIds.length; i += 5) {
             const chunk = messageIds.slice(i, i + 5);
@@ -337,7 +337,7 @@ async function analyzeWithGemini(messages) {
     [{"source": "Gmail", "priority": "high|mid|low", "title": "アクションの要約（動詞から始める）", "desc": "具体的な対応内容", "deadline": "今日中／明日中／今週中／〇月〇日まで／期限不明 のいずれか", "time": "From/Date", "refId": "id"}]
 
     ■ データ (JSON):
-    ${JSON.stringify(messages.slice(0, 100))}
+    ${JSON.stringify(messages.slice(0, 150))}
     `;
 
     try {
@@ -412,12 +412,13 @@ function renderTasks(tasks, isArchive = false) {
         <div id="${isArchive ? 'arch-' : 'task-'}${task.refId}" class="task-row unread priority-${task.priority || 'mid'}">
             <div class="sender" onclick="window.open('${task.url}', '_blank')">${task.time || 'Unknown'}</div>
             <div class="title-snippet" onclick="window.open('${task.url}', '_blank')">
-                <b>${task.title}</b> - <span>${task.desc}</span>
+                <div class="task-title">${task.title}</div>
+                <div class="task-desc">${task.desc}</div>
             </div>
             ${task.deadline ? `<div class="deadline-badge ${deadlineClass(task.deadline)}">${task.deadline}</div>` : '<div class="date"></div>'}
             <div class="actions">
-                ${!isArchive && task.deadline && task.deadline !== '期限不明'
-                    ? `<button onclick="addToCalendar('${task.refId}')" class="action-icon cal-btn" title="カレンダーに追加 (${task.deadline})">📅</button>`
+                ${!isArchive
+                    ? `<button onclick="addToCalendar('${task.refId}')" class="action-icon cal-btn" title="Googleカレンダーで確認・登録">📅</button>`
                     : ''
                 }
                 ${isArchive
@@ -480,42 +481,34 @@ function deadlineToDate(deadline) {
     return null;
 }
 
-window.addToCalendar = async function(id) {
+window.addToCalendar = function(id) {
     const task = lastFetchedTasks.find(t => t.refId === id);
     if (!task) return;
 
+    // YYYYMMDD 形式に変換
+    const fmt = d => d.toISOString().split('T')[0].replace(/-/g, '');
+
     let eventDate = deadlineToDate(task.deadline);
-    if (!eventDate) {
-        const input = prompt('締め切り日を入力してください (YYYY-MM-DD):', new Date().toISOString().split('T')[0]);
-        if (!input) return;
-        eventDate = new Date(input);
-    }
+    // 期限不明 or 解析失敗の場合は今日をデフォルトにしてカレンダーを開く
+    if (!eventDate) eventDate = new Date();
 
-    const dateStr = eventDate.toISOString().split('T')[0];
-    const event = {
-        summary: `[対応] ${task.title}`,
-        description: `${task.desc}\n\n差出人: ${task.time || ''}${task.url ? '\nメール: ' + task.url : ''}`,
-        start: { date: dateStr },
-        end:   { date: dateStr },
-        reminders: { useDefault: true }
-    };
+    const endDate = new Date(eventDate);
+    endDate.setDate(endDate.getDate() + 1);
 
-    try {
-        const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(event)
-        });
-        const data = await res.json();
-        if (data.error) {
-            alert('カレンダー登録失敗: ' + data.error.message);
-        } else {
-            const btn = document.querySelector(`#task-${id} .cal-btn`);
-            if (btn) { btn.innerHTML = '✅'; btn.disabled = true; btn.title = 'カレンダーに追加済み'; }
-        }
-    } catch (e) {
-        alert('エラー: ' + e.message);
-    }
+    const details = [
+        task.desc,
+        task.time ? `差出人: ${task.time}` : '',
+        task.url  ? `メール: ${task.url}` : ''
+    ].filter(Boolean).join('\n');
+
+    const params = new URLSearchParams({
+        action:  'TEMPLATE',
+        text:    `[対応] ${task.title}`,
+        dates:   `${fmt(eventDate)}/${fmt(endDate)}`,
+        details: details
+    });
+
+    window.open(`https://calendar.google.com/calendar/r/eventedit?${params}`, '_blank');
 };
 
 window.restoreTask = function(id) {
