@@ -16,6 +16,54 @@ const config = {
 let autoSyncInterval = null;
 let lastFetchedTasks = []; // Cache for current tasks
 
+// ===== IndexedDB Cache =====
+let _db = null;
+
+async function openDB() {
+    if (_db) return _db;
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open('GmailTaskCache', 1);
+        req.onupgradeneeded = e => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains('messages')) {
+                db.createObjectStore('messages', { keyPath: 'id' });
+            }
+        };
+        req.onsuccess = e => { _db = e.target.result; resolve(_db); };
+        req.onerror   = e => reject(e.target.error);
+    });
+}
+
+async function cacheGet(ids) {
+    const db = await openDB();
+    const tx = db.transaction('messages', 'readonly');
+    const store = tx.objectStore('messages');
+    const map = new Map();
+    await Promise.all(ids.map(id => new Promise(res => {
+        const req = store.get(id);
+        req.onsuccess = () => { if (req.result) map.set(id, req.result); res(); };
+        req.onerror = res;
+    })));
+    return map;
+}
+
+async function cacheSet(messages) {
+    if (!messages.length) return;
+    const db = await openDB();
+    const tx = db.transaction('messages', 'readwrite');
+    const store = tx.objectStore('messages');
+    messages.forEach(m => store.put(m));
+    return new Promise(res => { tx.oncomplete = res; tx.onerror = res; });
+}
+
+window.clearGmailCache = async function() {
+    const db = await openDB();
+    const tx = db.transaction('messages', 'readwrite');
+    tx.objectStore('messages').clear();
+    await new Promise(res => { tx.oncomplete = res; });
+    alert('キャッシュをクリアしました。次回同期時に全件再取得します。');
+};
+
 window.gisLoaded = function() {
     console.log("Google Identity Services (GIS) loaded");
     gisInited = true;
@@ -237,24 +285,28 @@ async function updateModelDropdown(providedKey) {
     }
 }
 
+function setSyncStatus(text) {
+    const el = document.getElementById('sync-status');
+    if (el) el.innerText = text;
+}
+
 async function syncTasks() {
     if (!accessToken) return;
     const btn = document.getElementById('sync-btn');
     if (btn) { btn.classList.add('spinning'); btn.disabled = true; }
 
     try {
+        setSyncStatus('メールを取得中...');
         const gmailMsgs = await fetchGmailMessages();
-        const tasks     = await analyzeWithGemini(gmailMsgs);
+        setSyncStatus(`${gmailMsgs.length}件を AI 分析中...`);
+        const tasks = await analyzeWithGemini(gmailMsgs);
 
         lastFetchedTasks = tasks;
         renderFilteredTasks();
-
-        const statusEl = document.getElementById('sync-status');
-        if (statusEl) statusEl.innerText = `Auto-Sync: OK (${new Date().toLocaleTimeString()})`;
+        setSyncStatus(`完了 ${new Date().toLocaleTimeString()} (${gmailMsgs.length}件分析)`);
     } catch (err) {
         console.error("Sync failed:", err);
-        const statusEl = document.getElementById('sync-status');
-        if (statusEl) statusEl.innerText = "Sync Error";
+        setSyncStatus('同期エラー');
     } finally {
         const syncBtn = document.getElementById('sync-btn');
         if (syncBtn) { syncBtn.classList.remove('spinning'); syncBtn.disabled = false; }
@@ -262,55 +314,79 @@ async function syncTasks() {
 }
 
 async function fetchGmailMessages() {
-    const query = `(to:ishigami@isl.gr.jp OR to:tlp@isl.gr.jp OR to:slp@isl.gr.jp) -from:tlp@isl.gr.jp -from:slp@isl.gr.jp newer_than:10d`;
+    const query = `(to:ishigami@isl.gr.jp OR to:tlp@isl.gr.jp OR to:slp@isl.gr.jp) -from:tlp@isl.gr.jp -from:slp@isl.gr.jp newer_than:30d`;
+    const headers = { 'Authorization': `Bearer ${accessToken}` };
 
-    try {
-        console.log("Fetching Gmail with 10d focus...");
-        const response = await fetch(
-            `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=200&q=${encodeURIComponent(query)}`,
-            { headers: { 'Authorization': `Bearer ${accessToken}` } }
-        );
-        const data = await response.json();
-        if (!data.messages) return [];
-
-        const messages   = [];
-        const messageIds = data.messages.slice(0, 150);
-
-        for (let i = 0; i < messageIds.length; i += 5) {
-            const chunk = messageIds.slice(i, i + 5);
-            const chunkResults = await Promise.all(chunk.map(async (m) => {
-                try {
-                    const detailRes = await fetch(
-                        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}`,
-                        { headers: { 'Authorization': `Bearer ${accessToken}` } }
-                    );
-                    if (!detailRes.ok) return null;
-                    const msg = await detailRes.json();
-                    if (!msg.payload) return null;
-
-                    const headers = msg.payload.headers;
-                    return {
-                        source:  'Gmail',
-                        id:      msg.id,
-                        snippet: msg.snippet,
-                        from:    headers.find(h => h.name === 'From')?.value || 'Unknown',
-                        subject: headers.find(h => h.name === 'Subject')?.value || 'No Subject',
-                        url:     `https://mail.google.com/mail/u/0/#inbox/${msg.threadId || msg.id}`
-                    };
-                } catch (err) {
-                    console.warn(`Failed to fetch detail for ${m.id}`, err);
-                    return null;
-                }
-            }));
-            messages.push(...chunkResults.filter(r => r !== null));
-            await new Promise(r => setTimeout(r, 100));
+    // ── Step 1: ページネーションで最大1000件のIDを取得 ──────────────
+    setSyncStatus('メールIDを取得中...');
+    let allIds = [];
+    let pageToken = null;
+    for (let page = 0; page < 2; page++) {
+        try {
+            const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=500&q=${encodeURIComponent(query)}`
+                      + (pageToken ? `&pageToken=${pageToken}` : '');
+            const res  = await fetch(url, { headers });
+            const data = await res.json();
+            if (!data.messages) break;
+            allIds.push(...data.messages.map(m => m.id));
+            setSyncStatus(`メールID取得: ${allIds.length}件...`);
+            if (!data.nextPageToken) break;
+            pageToken = data.nextPageToken;
+        } catch (e) {
+            console.warn('Pagination error page', page, e);
+            break;
         }
-
-        return messages;
-    } catch (err) {
-        console.error("Gmail fetch error:", err);
-        throw err;
     }
+    if (allIds.length === 0) return [];
+
+    // ── Step 2: キャッシュ確認 ───────────────────────────────────────
+    setSyncStatus(`${allIds.length}件のIDを確認中...`);
+    const cached = await cacheGet(allIds);
+    const newIds = allIds.filter(id => !cached.has(id));
+    setSyncStatus(`キャッシュ済: ${cached.size}件 / 新規取得: ${newIds.length}件`);
+
+    // ── Step 3: 未キャッシュのメール詳細を10並列で取得 ──────────────
+    const newMessages = [];
+    for (let i = 0; i < newIds.length; i += 10) {
+        setSyncStatus(`詳細取得中... ${Math.min(i + 10, newIds.length)} / ${newIds.length}件`);
+        const chunk   = newIds.slice(i, i + 10);
+        const results = await Promise.all(chunk.map(async id => {
+            try {
+                // format=metadata で snippet+指定ヘッダのみ取得（高速）
+                const res = await fetch(
+                    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}`
+                    + `?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,
+                    { headers }
+                );
+                if (!res.ok) return null;
+                const msg = await res.json();
+                if (!msg.payload) return null;
+                const hdrs = msg.payload.headers;
+                return {
+                    source:  'Gmail',
+                    id:      msg.id,
+                    snippet: msg.snippet,
+                    from:    hdrs.find(h => h.name === 'From')?.value    || 'Unknown',
+                    subject: hdrs.find(h => h.name === 'Subject')?.value || 'No Subject',
+                    date:    hdrs.find(h => h.name === 'Date')?.value    || '',
+                    url:     `https://mail.google.com/mail/u/0/#inbox/${msg.threadId || msg.id}`
+                };
+            } catch (e) {
+                console.warn('Failed to fetch detail', id, e);
+                return null;
+            }
+        }));
+        const valid = results.filter(Boolean);
+        newMessages.push(...valid);
+        await cacheSet(valid);
+        await new Promise(r => setTimeout(r, 80));
+    }
+
+    // ── Step 4: キャッシュ + 新規 を結合して返す ────────────────────
+    const all = [...cached.values(), ...newMessages];
+    // Gmail ID は辞書順降順 ≒ 新着順
+    all.sort((a, b) => (b.id > a.id ? 1 : -1));
+    return all;
 }
 
 async function analyzeWithGemini(messages) {
@@ -337,7 +413,7 @@ async function analyzeWithGemini(messages) {
     [{"source": "Gmail", "priority": "high|mid|low", "title": "アクションの要約（動詞から始める）", "desc": "具体的な対応内容", "deadline": "今日中／明日中／今週中／〇月〇日まで／期限不明 のいずれか", "time": "From/Date", "refId": "id"}]
 
     ■ データ (JSON):
-    ${JSON.stringify(messages.slice(0, 150))}
+    ${JSON.stringify(messages.slice(0, 400))}
     `;
 
     try {

@@ -101,6 +101,12 @@
                     <label class="setting-label">Extraction Criteria (AI Prompt)</label>
                     <textarea id="criteria-textarea" placeholder="Describe what to extract..." class="setting-textarea"></textarea>
                 </div>
+
+                <div class="setting-item setting-item--danger">
+                    <label class="setting-label">メールキャッシュ</label>
+                    <div class="setting-desc">取得済みメールをブラウザ内（IndexedDB）にキャッシュしています。差分のみ取得するため2回目以降は高速です。</div>
+                    <button onclick="clearGmailCache()" class="btn-outline btn-danger">キャッシュをクリア（全件再取得）</button>
+                </div>
             </div>
 
             <div class="modal-actions">

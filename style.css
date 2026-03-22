@@ -544,6 +544,26 @@ body {
 
 .btn-outline:hover { background: var(--gmail-hover); }
 
+.btn-danger {
+    color: var(--gmail-high);
+    border-color: #F5C6C2;
+}
+
+.btn-danger:hover { background: #FDECEA; }
+
+.setting-desc {
+    font-size: 12px;
+    color: var(--gmail-text-dim);
+    margin-bottom: 8px;
+    line-height: 1.5;
+}
+
+.setting-item--danger {
+    border-top: 1px solid var(--gmail-border);
+    padding-top: 16px;
+    margin-top: 4px;
+}
+
 /* ===== Modal ===== */
 .modal {
     position: fixed;
