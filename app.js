@@ -8,7 +8,7 @@ const config = {
     clientId:    localStorage.getItem('google_client_id')    || '710668584134-j2bdh6dptd1d46uojgqofubfn70out0g.apps.googleusercontent.com',
     geminiKey:   localStorage.getItem('gemini_api_key')      || '',
     geminiModel: localStorage.getItem('gemini_model')        || 'gemini-3.1-flash-lite-preview',
-    criteria:    localStorage.getItem('extraction_criteria') || "直近10日以内の ishigami@isl.gr.jp / tlp@isl.gr.jp / slp@isl.gr.jp 宛メールから、質問、依頼、内容確認、および総合的に見て対応が必要、または少しでも対応が必要と思わせるタスクを抽出してください。",
+    criteria:    localStorage.getItem('extraction_criteria') || '',
     doneTasks:   JSON.parse(localStorage.getItem('done_tasks')     || '[]'),
     archivedTasks:JSON.parse(localStorage.getItem('archived_tasks') || '[]'),
     myName:   localStorage.getItem('my_name')   || '',
@@ -617,6 +617,34 @@ async function loadAndDisplayTasks() {
 }
 
 // ===== View / Nav =====
+
+// ログイン後に Gmail プロフィールからメールアドレスを取得し、未設定のデフォルト値をセット
+async function applyUserProfileDefaults() {
+    try {
+        const res = await fetch(
+            'https://gmail.googleapis.com/gmail/v1/users/me/profile',
+            { headers: { 'Authorization': `Bearer ${accessToken}` } }
+        );
+        if (!res.ok) return;
+        const { emailAddress } = await res.json();
+        if (!emailAddress) return;
+
+        // criteria 未設定ならログインアドレスを使ったデフォルト文を生成
+        if (!localStorage.getItem('extraction_criteria')) {
+            config.criteria = `直近10日以内の ${emailAddress} 宛メールから、質問、依頼、内容確認、および総合的に見て対応が必要、または少しでも対応が必要と思わせるタスクを抽出してください。`;
+            localStorage.setItem('extraction_criteria', config.criteria);
+        }
+
+        // my_emails 未設定ならログインアドレスをデフォルトにセット
+        if (!localStorage.getItem('my_emails')) {
+            config.myEmails = emailAddress;
+            localStorage.setItem('my_emails', emailAddress);
+        }
+    } catch (e) {
+        console.warn('applyUserProfileDefaults error', e);
+    }
+}
+
 function onLoginSuccess() {
     const loginView = document.getElementById('login-view');
     const appView   = document.getElementById('app-view');
@@ -625,7 +653,7 @@ function onLoginSuccess() {
         if (loginView) loginView.classList.add('hidden');
         if (appView)   appView.classList.remove('hidden');
         driveEnsureFolder().then(updateDriveFolderLink);      // フォルダURLをSettings欄に反映
-        loadAndDisplayTasks();                                // API を呼ばず Drive から読む
+        applyUserProfileDefaults().then(() => loadAndDisplayTasks()); // プロフィール取得後にタスク読み込み
         if (autoSyncInterval) clearInterval(autoSyncInterval);
         autoSyncInterval = setInterval(reloadFromDrive, 5 * 60 * 1000); // Drive 読み込みのみ
     }, 300);
