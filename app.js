@@ -796,9 +796,13 @@ async function syncTasks() {
 }
 
 async function fetchGmailMessages() {
-    // マイプロフィールのメールアドレスを使用（未設定の場合は全受信メールを対象）
-    const emails = (config.myEmails || '')
+    // クライテリアからメールアドレスを抽出（例: "office@isl.gr.jp 宛メール"）
+    const criteriaEmails = (config.criteria || '')
+        .match(/[\w.+%-]+@[\w.-]+\.[a-zA-Z]{2,}/g) || [];
+    // クライテリアに記載なければプロフィールのアドレスを使用
+    const profileEmails = (config.myEmails || '')
         .split(',').map(e => e.trim()).filter(Boolean);
+    const emails = [...new Set([...criteriaEmails, ...profileEmails])];
     const query = emails.length > 0
         ? `(${emails.map(e => `to:${e}`).join(' OR ')}) newer_than:30d`
         : `in:inbox newer_than:30d`;
