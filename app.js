@@ -10,7 +10,9 @@ const config = {
     geminiModel: localStorage.getItem('gemini_model')        || 'gemini-3.1-flash-lite-preview',
     criteria:    localStorage.getItem('extraction_criteria') || "直近10日以内の ishigami@isl.gr.jp / tlp@isl.gr.jp / slp@isl.gr.jp 宛メールから、質問、依頼、内容確認、および総合的に見て対応が必要、または少しでも対応が必要と思わせるタスクを抽出してください。",
     doneTasks:   JSON.parse(localStorage.getItem('done_tasks')     || '[]'),
-    archivedTasks:JSON.parse(localStorage.getItem('archived_tasks') || '[]')
+    archivedTasks:JSON.parse(localStorage.getItem('archived_tasks') || '[]'),
+    myName:   localStorage.getItem('my_name')   || '',
+    myEmails: localStorage.getItem('my_emails') || ''
 };
 
 let autoSyncInterval = null;
@@ -47,7 +49,91 @@ window.changePriority = function(refId, newPriority) {
 
     // Drive にも保存
     saveTasksToDrive(lastFetchedTasks);
+
+    // 5件ごとに自動で基準を更新（非同期で実行）
+    if (priorityFeedback.length >= 5 && priorityFeedback.length % 5 === 0) {
+        setTimeout(refineCriteria, 800);
+    }
 };
+
+// ===== My Profile: プロフィールに基づく優先度ルールを生成 =====
+function buildProfileRule() {
+    const name   = config.myName   || '';
+    const emails = (config.myEmails || '').split(/[,\s]+/).filter(Boolean);
+    if (!name && emails.length === 0) return '';
+
+    const namePart  = name         ? `「${name}」` : '';
+    const emailPart = emails.length ? `（${emails.join(' / ')}）` : '';
+
+    return `
+    ■ 受信者（To / CC）による優先度補正 — 最優先ルール:
+    - To 欄に ${namePart}${emailPart} が含まれるメールは、直接の依頼・質問である可能性が非常に高い。他の条件が同等ならば優先度を "high" にしてください。
+    - CC 欄のみに含まれる場合は情報共有目的が多いため、他の要素が同等なら優先度を1段階下げることを検討してください。
+    - BCC 受信の場合（To にも CC にも名前が見当たらないが inbox に届いている場合）は To と同等に扱い、優先度を上げてください。
+    - snippet や subject に ${namePart} への言及がある場合も本人への関連性が高いと判断してください。`;
+}
+
+// ===== AI による基準の自動更新 =====
+async function refineCriteria() {
+    if (!config.geminiKey || priorityFeedback.length < 5) return;
+
+    setSyncStatus('AIが優先度基準を学習中...');
+    const modelName = config.geminiModel || 'gemini-3.1-flash-lite-preview';
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${config.geminiKey}`;
+
+    const prompt = `
+あなたはメールタスク管理AIです。以下は、AIが優先度を判断した際にユーザーが修正した例の一覧です。
+これらから読み取れる「優先度判断のルール・傾向」を、5点以内で日本語にまとめてください。
+
+出力条件：
+- 各ルールは「〜の場合は high / mid / low 優先度にする」という形式で簡潔に書く
+- 番号付きリスト形式（1. 2. 3. …）
+- ルール文のみ出力。説明・前置き・まとめ文は一切不要
+
+修正例：
+${priorityFeedback.map(f =>
+    `・「${f.title}」(From: ${f.from}): AI="${f.original}" → ユーザー修正="${f.corrected}"`
+).join('\n')}
+    `;
+
+    try {
+        const res = await fetch(apiUrl, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+        });
+        const raw = await res.json();
+        if (!raw.candidates?.length) { setSyncStatus('基準の更新に失敗しました'); return; }
+
+        const rules = raw.candidates[0].content.parts[0].text.trim();
+
+        // criteria の「学習済みルール」セクションのみ置き換え（ベース部分は維持）
+        const base    = (config.criteria || '').split(/\n*【学習済みルール/)[0].trimEnd();
+        const updated = base
+            + '\n\n【学習済みルール（自動更新: '
+            + new Date().toLocaleDateString('ja-JP')
+            + '）】\n' + rules;
+
+        config.criteria = updated;
+        localStorage.setItem('extraction_criteria', updated);
+
+        // 設定画面が開いていれば textarea も更新
+        const ct = document.getElementById('criteria-textarea');
+        if (ct) ct.value = updated;
+
+        // 件数バッジも更新
+        const fbCount = document.getElementById('feedback-count');
+        if (fbCount) fbCount.textContent = priorityFeedback.length;
+
+        setSyncStatus(`優先度の学習基準を更新しました ✓（${priorityFeedback.length}件の修正を学習）`);
+        setTimeout(() => setSyncStatus(''), 4000);
+    } catch (e) {
+        console.error('refineCriteria error', e);
+        setSyncStatus('基準更新エラー');
+    }
+}
+
+window.runRefineCriteria = refineCriteria;
 
 // ===== Filters & Sort =====
 const activeFilters = { priority: null, deadline: null };
@@ -326,9 +412,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const ci = document.getElementById('client-id-input');
         const gk = document.getElementById('gemini-key-input');
         const ct = document.getElementById('criteria-textarea');
+        const mn = document.getElementById('my-name-input');
+        const me = document.getElementById('my-emails-input');
         if (ci) ci.value = config.clientId  || '';
         if (gk) gk.value = config.geminiKey || '';
         if (ct) ct.value = config.criteria  || '';
+        if (mn) mn.value = config.myName    || '';
+        if (me) me.value = config.myEmails  || '';
+
+        // 修正履歴件数を表示
+        const fbCount = document.getElementById('feedback-count');
+        if (fbCount) fbCount.textContent = priorityFeedback.length;
 
         setActiveNav('nav-settings');
     });
@@ -342,11 +436,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const m            = document.getElementById('gemini-model-select').value;
             config.geminiModel = m === 'custom' ? document.getElementById('gemini-custom-model').value : m;
             config.criteria    = document.getElementById('criteria-textarea').value;
+            config.myName      = document.getElementById('my-name-input').value.trim();
+            config.myEmails    = document.getElementById('my-emails-input').value.trim();
 
             localStorage.setItem('google_client_id',    config.clientId);
             localStorage.setItem('gemini_api_key',      config.geminiKey);
             localStorage.setItem('gemini_model',        config.geminiModel);
             localStorage.setItem('extraction_criteria', config.criteria);
+            localStorage.setItem('my_name',             config.myName);
+            localStorage.setItem('my_emails',           config.myEmails);
 
             closeModal('settings-modal');
             syncTasks();
@@ -590,7 +688,7 @@ async function fetchGmailMessages() {
                 // format=metadata で snippet+指定ヘッダのみ取得（高速）
                 const res = await fetch(
                     `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}`
-                    + `?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,
+                    + `?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=To&metadataHeaders=Cc`,
                     { headers }
                 );
                 if (!res.ok) return null;
@@ -604,6 +702,8 @@ async function fetchGmailMessages() {
                     from:    hdrs.find(h => h.name === 'From')?.value    || 'Unknown',
                     subject: hdrs.find(h => h.name === 'Subject')?.value || 'No Subject',
                     date:    hdrs.find(h => h.name === 'Date')?.value    || '',
+                    to:      hdrs.find(h => h.name === 'To')?.value      || '',
+                    cc:      hdrs.find(h => h.name === 'Cc')?.value      || '',
                     url:     `https://mail.google.com/mail/u/0/#inbox/${msg.threadId || msg.id}`
                 };
             } catch (e) {
@@ -648,6 +748,8 @@ async function analyzeOneBatch(apiUrl, batch, allMessages) {
           ).join('\n')
         : '';
 
+    const profileRule = buildProfileRule();
+
     const prompt = `
     以下のメールリストを分析し、「対応が必要なタスク」を漏れなく抽出してください。
 
@@ -658,7 +760,9 @@ async function analyzeOneBatch(apiUrl, batch, allMessages) {
 
     ■ ユーザー独自の抽出要件:
     ${config.criteria}
-${feedbackSection}
+${profileRule}${feedbackSection}
+    ■ 各メールの "to" フィールドは To ヘッダー、"cc" フィールドは CC ヘッダーの内容です。優先度補正ルールの判定に使用してください。
+
     ■ 出力形式 (JSON 配列のみ。前後に説明文を一切つけないこと):
     [{"source":"Gmail","priority":"high|mid|low","title":"動詞から始めるアクション要約","desc":"具体的な対応内容","deadline":"今日中／明日中／今週中／〇月〇日まで／期限不明","time":"差出人 / 受信日","refId":"id"}]
 
