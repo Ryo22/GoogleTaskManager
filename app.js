@@ -179,19 +179,65 @@ window.setFilter = function(type, value) {
     renderFilteredTasks();
 };
 
-// ===== Google Drive appDataFolder helpers =====
-const DRIVE_API = 'https://www.googleapis.com/drive/v3';
-const DRIVE_UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
+// ===== Google Drive（マイドライブ/TaskManager/）helpers =====
+const DRIVE_API      = 'https://www.googleapis.com/drive/v3';
+const DRIVE_UPLOAD   = 'https://www.googleapis.com/upload/drive/v3';
+const DRIVE_FOLDER_NAME = 'TaskManager';
+
+// フォルダIDはlocalStorageにキャッシュして毎回APIを叩かないようにする
+let _driveFolderId = localStorage.getItem('drive_folder_id') || null;
 
 function driveHeaders(extra = {}) {
     return { 'Authorization': `Bearer ${accessToken}`, ...extra };
 }
 
-// ファイル名からファイルIDを検索（なければ null）
-async function driveFindFile(name) {
+// マイドライブ直下の TaskManager フォルダを取得または作成し、IDを返す
+async function driveEnsureFolder() {
+    if (_driveFolderId) return _driveFolderId;
     try {
+        // 既存フォルダを検索
+        const q = `name='${DRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
         const res = await fetch(
-            `${DRIVE_API}/files?spaces=appDataFolder&q=${encodeURIComponent(`name='${name}'`)}&fields=files(id,name)`,
+            `${DRIVE_API}/files?q=${encodeURIComponent(q)}&fields=files(id,name)&spaces=drive`,
+            { headers: driveHeaders() }
+        );
+        if (!res.ok) return null;
+        const data = await res.json();
+
+        if (data.files?.length > 0) {
+            _driveFolderId = data.files[0].id;
+        } else {
+            // フォルダを新規作成
+            const cr = await fetch(`${DRIVE_API}/files`, {
+                method:  'POST',
+                headers: driveHeaders({ 'Content-Type': 'application/json' }),
+                body:    JSON.stringify({ name: DRIVE_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' })
+            });
+            if (!cr.ok) return null;
+            _driveFolderId = (await cr.json()).id || null;
+        }
+
+        if (_driveFolderId) {
+            localStorage.setItem('drive_folder_id', _driveFolderId);
+            // Settings に表示中のリンクを更新
+            const link = document.getElementById('drive-folder-link');
+            if (link) {
+                link.href        = `https://drive.google.com/drive/folders/${_driveFolderId}`;
+                link.style.display = 'inline';
+            }
+        }
+        return _driveFolderId;
+    } catch (e) { console.warn('driveEnsureFolder error', e); return null; }
+}
+
+// フォルダ内でファイル名からIDを検索（なければ null）
+async function driveFindFile(name) {
+    const folderId = await driveEnsureFolder();
+    if (!folderId) return null;
+    try {
+        const q = `name='${name}' and '${folderId}' in parents and trashed=false`;
+        const res = await fetch(
+            `${DRIVE_API}/files?q=${encodeURIComponent(q)}&fields=files(id,name)&spaces=drive`,
             { headers: driveHeaders() }
         );
         if (!res.ok) return null;
@@ -217,7 +263,7 @@ async function driveWriteFile(fileId, name, data) {
     const body = JSON.stringify(data);
     try {
         if (fileId) {
-            // 既存ファイルを上書き
+            // 既存ファイルを上書き（内容のみ更新）
             const res = await fetch(
                 `${DRIVE_UPLOAD}/files/${fileId}?uploadType=media`,
                 { method: 'PATCH', headers: driveHeaders({ 'Content-Type': 'application/json' }), body }
@@ -225,17 +271,18 @@ async function driveWriteFile(fileId, name, data) {
             if (!res.ok) console.warn('driveWriteFile update error', await res.text());
             return fileId;
         } else {
-            // 新規作成（multipart）
-            const meta = JSON.stringify({ name, parents: ['appDataFolder'] });
-            const boundary = 'boundary_xyz';
+            // 新規作成（multipart: メタデータ＋内容を一度に送信）
+            const folderId = await driveEnsureFolder();
+            if (!folderId) return null;
+            const meta      = JSON.stringify({ name, parents: [folderId] });
+            const boundary  = 'boundary_tm_xyz';
             const multipart = `--${boundary}\r\nContent-Type: application/json\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${boundary}--`;
             const res = await fetch(
                 `${DRIVE_UPLOAD}/files?uploadType=multipart`,
                 { method: 'POST', headers: driveHeaders({ 'Content-Type': `multipart/related; boundary=${boundary}` }), body: multipart }
             );
             if (!res.ok) { console.warn('driveWriteFile create error', await res.text()); return null; }
-            const created = await res.json();
-            return created.id || null;
+            return (await res.json()).id || null;
         }
     } catch (e) { console.warn('driveWriteFile error', e); return null; }
 }
@@ -246,6 +293,11 @@ async function driveDeleteFile(fileId) {
     try {
         await fetch(`${DRIVE_API}/files/${fileId}`, { method: 'DELETE', headers: driveHeaders() });
     } catch (e) { console.warn('driveDeleteFile error', e); }
+}
+
+// Drive フォルダの URL を返す（未取得なら null）
+function driveGetFolderUrl() {
+    return _driveFolderId ? `https://drive.google.com/drive/folders/${_driveFolderId}` : null;
 }
 
 // ===== Gmail メッセージキャッシュ（in-memory + Drive flush）=====
@@ -296,6 +348,15 @@ window.clearGmailCache = async function() {
         alert('メールキャッシュをクリアしました。次回同期時に全件再取得します。');
     } catch (e) { alert('エラー: ' + e.message); }
 };
+
+// ログイン成功後にフォルダURLをSettings欄に反映する
+function updateDriveFolderLink() {
+    const url  = driveGetFolderUrl();
+    const link = document.getElementById('drive-folder-link');
+    if (!link) return;
+    if (url) { link.href = url; link.style.display = 'inline'; }
+    else      { link.style.display = 'none'; }
+}
 
 window.gisLoaded = function() {
     console.log("Google Identity Services (GIS) loaded");
@@ -355,7 +416,7 @@ function checkBeforeLogin() {
     if (config.clientId && gisInited) {
         tokenClient = google.accounts.oauth2.initTokenClient({
             client_id: config.clientId,
-            scope: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/drive.appdata',
+            scope: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/drive.file',
             callback: handleTokenResponse,
         });
 
@@ -423,6 +484,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // 修正履歴件数を表示
         const fbCount = document.getElementById('feedback-count');
         if (fbCount) fbCount.textContent = priorityFeedback.length;
+
+        // Drive フォルダリンクを更新
+        updateDriveFolderLink();
 
         setActiveNav('nav-settings');
     });
@@ -560,7 +624,8 @@ function onLoginSuccess() {
     setTimeout(() => {
         if (loginView) loginView.classList.add('hidden');
         if (appView)   appView.classList.remove('hidden');
-        loadAndDisplayTasks();                                // API を呼ばず DB から読む
+        driveEnsureFolder().then(updateDriveFolderLink);      // フォルダURLをSettings欄に反映
+        loadAndDisplayTasks();                                // API を呼ばず Drive から読む
         if (autoSyncInterval) clearInterval(autoSyncInterval);
         autoSyncInterval = setInterval(reloadFromDrive, 5 * 60 * 1000); // Drive 読み込みのみ
     }, 300);

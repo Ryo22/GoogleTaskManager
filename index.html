@@ -152,8 +152,15 @@
                 </div>
 
                 <div class="setting-item setting-item--danger">
-                    <label class="setting-label">メールキャッシュ</label>
-                    <div class="setting-desc">取得済みメールを Google Drive（appDataFolder）に保存しています。差分のみ取得するため2回目以降は高速です。</div>
+                    <label class="setting-label">メールキャッシュ・保存先</label>
+                    <div class="setting-desc">
+                        取得済みメールとタスクを <b>マイドライブ / TaskManager /</b> フォルダに保存しています。差分のみ取得するため2回目以降は高速です。
+                    </div>
+                    <div style="margin: 6px 0 10px; font-size: 13px;">
+                        <a id="drive-folder-link" href="#" target="_blank" style="display:none; color:var(--gmail-blue);">
+                            📂 Drive フォルダを開く
+                        </a>
+                    </div>
                     <button onclick="clearGmailCache()" class="btn-outline btn-danger">キャッシュをクリア（全件再取得）</button>
                 </div>
             </div>
