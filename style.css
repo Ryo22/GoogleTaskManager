@@ -61,6 +61,31 @@ body {
     font-size: 16px;
 }
 
+.login-status {
+    font-size: 14px;
+    color: var(--gmail-text-dim);
+    margin: -24px 0 24px;
+}
+
+/* ===== Logout Button ===== */
+.logout-btn {
+    padding: 0 14px;
+    height: 32px;
+    border-radius: 16px;
+    border: 1px solid var(--gmail-border);
+    background: none;
+    font-size: 12px;
+    font-family: 'Roboto', sans-serif;
+    color: var(--gmail-text-dim);
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+}
+
+.logout-btn:hover {
+    background: var(--gmail-hover);
+    color: var(--gmail-text);
+}
+
 /* ===== Top Bar ===== */
 .top-bar {
     height: 64px;

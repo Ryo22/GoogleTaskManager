@@ -122,9 +122,46 @@ function initGis() {
     // Legacy support
 }
 
-function checkBeforeLogin() {
-    console.log("Checking before login status...", { inited: gisInited, hasClientId: !!config.clientId });
+// ===== Auth helpers =====
+function handleTokenResponse(resp) {
+    if (resp.error) {
+        // サイレントログイン失敗 → ボタン表示（エラーは通知しない）
+        console.warn('Token response error:', resp.error);
+        showLoginButton();
+        return;
+    }
+    accessToken = resp.access_token;
+    localStorage.setItem('was_logged_in', '1');
+    onLoginSuccess();
+    // 55 分後にサイレントリフレッシュ（アクセストークンの有効期限は1時間）
+    setTimeout(silentRefresh, 55 * 60 * 1000);
+}
 
+function silentRefresh() {
+    if (accessToken && tokenClient) {
+        tokenClient.requestAccessToken({ prompt: '' });
+    }
+}
+
+function showLoginButton() {
+    const btn    = document.getElementById('login-btn');
+    const status = document.getElementById('login-status');
+    if (btn)    { btn.classList.remove('hidden'); }
+    if (status) { status.innerText = 'Googleアカウントでサインインしてください'; }
+}
+
+window.logout = function() {
+    accessToken = null;
+    localStorage.removeItem('was_logged_in');
+    const loginView = document.getElementById('login-view');
+    const appView   = document.getElementById('app-view');
+    if (loginView) { loginView.style.opacity = '1'; loginView.classList.remove('hidden'); }
+    if (appView)   { appView.classList.add('hidden'); }
+    showLoginButton();
+    if (autoSyncInterval) { clearInterval(autoSyncInterval); autoSyncInterval = null; }
+};
+
+function checkBeforeLogin() {
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', checkBeforeLogin);
         return;
@@ -134,23 +171,25 @@ function checkBeforeLogin() {
         tokenClient = google.accounts.oauth2.initTokenClient({
             client_id: config.clientId,
             scope: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar',
-            callback: (resp) => {
-                if (resp.error) {
-                    console.error("Token error:", resp);
-                    alert("Auth failed: " + resp.error);
-                    return;
-                }
-                accessToken = resp.access_token;
-                onLoginSuccess();
-            },
+            callback: handleTokenResponse,
         });
-        console.log("Token client initialized");
+
+        if (localStorage.getItem('was_logged_in')) {
+            // 既ログイン済み → UI なしでサイレントログインを試みる
+            const status = document.getElementById('login-status');
+            if (status) status.innerText = '認証を確認中...';
+            tokenClient.requestAccessToken({ prompt: '' });
+            // 8秒以内に成功しなければログインボタンを表示（フォールバック）
+            setTimeout(() => { if (!accessToken) showLoginButton(); }, 8000);
+        } else {
+            showLoginButton();
+        }
     } else if (!config.clientId) {
-        console.warn("No Client ID found. Please set it in Settings.");
         const loginBtn = document.getElementById('login-btn');
         if (loginBtn) {
-            loginBtn.innerText = "Please set Client ID in Settings first";
-            loginBtn.disabled = true;
+            loginBtn.innerText = 'Settings で Client ID を設定してください';
+            loginBtn.disabled  = true;
+            loginBtn.classList.remove('hidden');
         }
     }
 }
@@ -166,8 +205,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (loginBtn) {
         loginBtn.addEventListener('click', () => {
-            if (tokenClient) tokenClient.requestAccessToken({ prompt: 'consent' });
-            else alert("Google Auth Client is still initializing...");
+            if (tokenClient) tokenClient.requestAccessToken({ prompt: 'select_account' });
+            else alert("Google Auth Client はまだ初期化中です。しばらくお待ちください。");
         });
     }
 

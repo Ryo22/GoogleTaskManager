@@ -14,8 +14,9 @@
 
     <div id="login-view">
         <img src="https://www.gstatic.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png" height="50" class="login-logo">
-        <h1 class="login-title">Sign in to Task Manager</h1>
-        <button id="login-btn" class="btn-primary login-btn">Google でログイン</button>
+        <h1 class="login-title">Task Manager</h1>
+        <p id="login-status" class="login-status">読み込み中...</p>
+        <button id="login-btn" class="btn-primary login-btn hidden">Google でログイン</button>
     </div>
 
     <div class="top-bar">
@@ -27,6 +28,7 @@
             <button id="sync-btn" class="sync-btn" title="手動同期"><span class="material-icons-round">sync</span></button>
             <span id="sync-status" class="sync-status">Ready</span>
             <div id="user-info" class="user-info">Guest User</div>
+            <button onclick="logout()" class="logout-btn" title="ログアウト">ログアウト</button>
         </div>
     </div>
 
