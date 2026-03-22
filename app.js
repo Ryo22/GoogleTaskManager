@@ -490,6 +490,20 @@ document.addEventListener('DOMContentLoaded', () => {
         if (mn) mn.value = config.myName    || '';
         if (me) me.value = config.myEmails  || '';
 
+        // モデルドロップダウンを保存済みの値に合わせる
+        const ms = document.getElementById('gemini-model-select');
+        const ci = document.getElementById('gemini-custom-model');
+        if (ms && config.geminiModel) {
+            const opt = [...ms.options].find(o => o.value === config.geminiModel);
+            if (opt) {
+                ms.value = config.geminiModel;
+                if (ci) ci.classList.add('hidden');
+            } else {
+                ms.value = 'custom';
+                if (ci) { ci.value = config.geminiModel; ci.classList.remove('hidden'); }
+            }
+        }
+
         // 修正履歴件数を表示
         const fbCount = document.getElementById('feedback-count');
         if (fbCount) fbCount.textContent = priorityFeedback.length;

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <!-- 背景（Gmailの赤→紫系に変更） -->
+  <rect width="48" height="48" rx="4" fill="#673AB7"/>
+  <!-- Gmail風のM字エンベロープ -->
+  <path d="M6 14 L24 28 L42 14 L42 36 Q42 38 40 38 L8 38 Q6 38 6 36 Z" fill="white" opacity="0.15"/>
+  <path d="M6 14 L24 28 L42 14" fill="none" stroke="white" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M6 14 L6 36 Q6 38 8 38 L40 38 Q42 38 42 36 L42 14" fill="none" stroke="white" stroke-width="3" stroke-linejoin="round"/>
+  <!-- AI を示す小さなスパーク -->
+  <circle cx="36" cy="12" r="5" fill="#FFD600"/>
+  <text x="36" y="16" text-anchor="middle" font-size="7" font-weight="bold" fill="#333">AI</text>
+</svg>
