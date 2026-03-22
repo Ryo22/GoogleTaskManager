@@ -481,12 +481,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (navSettings) navSettings.addEventListener('click', () => {
         openModal('settings-modal');
 
-        const ci = document.getElementById('client-id-input');
         const gk = document.getElementById('gemini-key-input');
         const ct = document.getElementById('criteria-textarea');
         const mn = document.getElementById('my-name-input');
         const me = document.getElementById('my-emails-input');
-        if (ci) ci.value = config.clientId  || '';
         if (gk) gk.value = config.geminiKey || '';
         if (ct) ct.value = config.criteria  || '';
         if (mn) mn.value = config.myName    || '';
@@ -506,7 +504,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (saveBtn) {
         saveBtn.addEventListener('click', async () => {
-            config.clientId    = document.getElementById('client-id-input').value;
             config.geminiKey   = document.getElementById('gemini-key-input').value;
             const m            = document.getElementById('gemini-model-select').value;
             config.geminiModel = m === 'custom' ? document.getElementById('gemini-custom-model').value : m;
@@ -514,7 +511,6 @@ document.addEventListener('DOMContentLoaded', () => {
             config.myName      = document.getElementById('my-name-input').value.trim();
             config.myEmails    = document.getElementById('my-emails-input').value.trim();
 
-            localStorage.setItem('google_client_id',    config.clientId);
             localStorage.setItem('gemini_api_key',      config.geminiKey);
             localStorage.setItem('gemini_model',        config.geminiModel);
             localStorage.setItem('extraction_criteria', config.criteria);
