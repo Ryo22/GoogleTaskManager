@@ -535,7 +535,12 @@ async function analyzeOneBatch(apiUrl, batch, allMessages) {
         const results = extractJsonArray(text);
         return results.map(r => {
             const orig = allMessages.find(m => m.id === r.refId);
-            return { ...r, url: orig ? orig.url : '#' };
+            return {
+                ...r,
+                url:          orig ? orig.url  : '#',
+                receivedDate: orig ? orig.date : '',   // 実際の受信日時
+                senderFrom:   orig ? orig.from : ''    // 実際の差出人
+            };
         });
     } catch (e) {
         console.error('analyzeOneBatch error', e);
@@ -577,6 +582,35 @@ async function analyzeWithGemini(messages, onProgress) {
 }
 
 // ===== Render =====
+
+// 受信日時を相対表示にフォーマット
+function formatReceivedDate(dateStr) {
+    if (!dateStr) return '';
+    try {
+        const d    = new Date(dateStr);
+        if (isNaN(d)) return dateStr;
+        const now  = new Date();
+        const diff = now - d;
+        const days = Math.floor(diff / 86400000);
+        const hhmm = d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+
+        if (days === 0) return `今日 ${hhmm}`;
+        if (days === 1) return `昨日 ${hhmm}`;
+        if (days  <  7) return `${days}日前 ${hhmm}`;
+        const m = d.getMonth() + 1, dd = d.getDate();
+        return `${m}/${dd}`;
+    } catch { return dateStr; }
+}
+
+// "山田 太郎 <taro@example.com>" → "山田 太郎"
+function extractSenderName(from) {
+    if (!from) return '';
+    const m = from.match(/^"?([^"<]+?)"?\s*</);
+    if (m) return m[1].trim();
+    const em = from.match(/^([^@\s]+)@/);
+    return em ? em[1] : from;
+}
+
 function deadlineClass(deadline) {
     if (!deadline) return '';
     const d = deadline.replace(/\s/g, '');
@@ -614,9 +648,15 @@ function renderTasks(tasks, isArchive = false) {
         return;
     }
 
-    list.innerHTML = tasks.map(task => `
+    list.innerHTML = tasks.map(task => {
+        const dateLabel   = formatReceivedDate(task.receivedDate) || task.time || '';
+        const senderLabel = extractSenderName(task.senderFrom)    || '';
+        return `
         <div id="${isArchive ? 'arch-' : 'task-'}${task.refId}" class="task-row unread priority-${task.priority || 'mid'}">
-            <div class="sender" onclick="window.open('${task.url}', '_blank')">${task.time || 'Unknown'}</div>
+            <div class="sender" onclick="window.open('${task.url}', '_blank')">
+                <div class="received-date">${dateLabel}</div>
+                ${senderLabel ? `<div class="received-from">${senderLabel}</div>` : ''}
+            </div>
             <div class="title-snippet" onclick="window.open('${task.url}', '_blank')">
                 <div class="task-title">${task.title}</div>
                 <div class="task-desc">${task.desc}</div>
@@ -633,7 +673,7 @@ function renderTasks(tasks, isArchive = false) {
                 }
             </div>
         </div>
-    `).join('');
+    `; }).join('');
 }
 
 function renderFilteredTasks() {
