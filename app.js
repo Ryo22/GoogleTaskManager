@@ -119,6 +119,51 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (syncBtn) syncBtn.addEventListener('click', syncTasks);
     
+    // Model Loading Functionality
+    const fetchModelsBtn = document.getElementById('fetch-models-btn');
+    const modelSelect = document.getElementById('gemini-model-select');
+    const customModelInput = document.getElementById('gemini-custom-model');
+
+    if (fetchModelsBtn) {
+        fetchModelsBtn.addEventListener('click', async () => {
+            const apiKey = document.getElementById('gemini-key-input').value;
+            if (!apiKey) {
+                alert("Please enter a Gemini API Key first.");
+                return;
+            }
+            fetchModelsBtn.innerText = "Loading...";
+            try {
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+                const data = await res.json();
+                if (data.models) {
+                    // Filter models that support chat/generate
+                    const chatModels = data.models
+                        .filter(m => m.supportedGenerationMethods.includes('generateContent'))
+                        .map(m => m.name.replace('models/', ''));
+                    
+                    // Keep original options but clear and refill
+                    modelSelect.innerHTML = chatModels.map(name => `<option value="${name}">${name}</option>`).join('') + '<option value="custom">-- Custom ID --</option>';
+                    alert(`${chatModels.length} models loaded successfully!`);
+                } else {
+                    alert("Failed to load models. Check your API key.");
+                }
+            } catch (err) {
+                console.error(err);
+                alert("Error fetching models.");
+            } finally {
+                fetchModelsBtn.innerText = "利用可能なモデルをロード";
+            }
+        });
+    }
+
+    if (modelSelect) {
+        modelSelect.addEventListener('change', (e) => {
+            if (customModelInput) {
+                customModelInput.style.display = e.target.value === 'custom' ? 'block' : 'none';
+            }
+        });
+    }
+
     const sendChatBtn = document.getElementById('send-chat-btn');
     if (sendChatBtn) sendChatBtn.addEventListener('click', handleChat);
 });
