@@ -44,6 +44,25 @@
                     <div class="view-subtitle">Action required items</div>
                 </div>
                 <div id="task-summary"></div>
+
+                <div class="filter-bar">
+                    <div class="filter-group">
+                        <span class="filter-label">優先度</span>
+                        <button class="filter-chip active" data-type="priority" data-value="__all__" onclick="setFilter('priority', null)">すべて</button>
+                        <button class="filter-chip" data-type="priority" data-value="high" onclick="setFilter('priority', 'high')">🔴 高</button>
+                        <button class="filter-chip" data-type="priority" data-value="mid"  onclick="setFilter('priority', 'mid')">🟡 中</button>
+                        <button class="filter-chip" data-type="priority" data-value="low"  onclick="setFilter('priority', 'low')">🟢 低</button>
+                    </div>
+                    <div class="filter-sep"></div>
+                    <div class="filter-group">
+                        <span class="filter-label">期限</span>
+                        <button class="filter-chip" data-type="deadline" data-value="today"    onclick="setFilter('deadline', 'today')">今日中</button>
+                        <button class="filter-chip" data-type="deadline" data-value="tomorrow" onclick="setFilter('deadline', 'tomorrow')">明日中</button>
+                        <button class="filter-chip" data-type="deadline" data-value="thisweek" onclick="setFilter('deadline', 'thisweek')">今週中</button>
+                        <button class="filter-chip" data-type="deadline" data-value="unknown"  onclick="setFilter('deadline', 'unknown')">期限不明</button>
+                    </div>
+                </div>
+
                 <div id="task-list" class="task-list"></div>
             </div>
 

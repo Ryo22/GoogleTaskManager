@@ -204,6 +204,60 @@ body {
     color: var(--gmail-text-dim);
 }
 
+/* ===== Filter Bar ===== */
+.filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 16px;
+    border-bottom: 1px solid var(--gmail-border);
+    background: var(--gmail-white);
+    flex-wrap: wrap;
+}
+
+.filter-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.filter-label {
+    font-size: 11px;
+    color: var(--gmail-text-dim);
+    font-weight: 500;
+    margin-right: 2px;
+    white-space: nowrap;
+}
+
+.filter-sep {
+    width: 1px;
+    height: 18px;
+    background: var(--gmail-border);
+    flex-shrink: 0;
+}
+
+.filter-chip {
+    padding: 3px 11px;
+    border-radius: 14px;
+    border: 1px solid var(--gmail-border);
+    background: none;
+    font-size: 12px;
+    font-family: 'Roboto', sans-serif;
+    color: var(--gmail-text-dim);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+}
+
+.filter-chip:hover   { background: var(--gmail-hover); }
+
+.filter-chip.active  {
+    background: var(--gmail-active);
+    color: var(--gmail-blue);
+    border-color: var(--gmail-blue);
+    font-weight: 500;
+}
+
 /* ===== Task List ===== */
 .task-list {
     flex: 1;

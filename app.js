@@ -21,6 +21,30 @@ const config = {
 let autoSyncInterval = null;
 let lastFetchedTasks = []; // Cache for current tasks
 
+// ===== Filters =====
+const activeFilters = { priority: null, deadline: null };
+
+function applyFilters(tasks) {
+    return tasks.filter(t => {
+        if (config.doneTasks.includes(t.refId)) return false;
+        if (activeFilters.priority && t.priority !== activeFilters.priority) return false;
+        if (activeFilters.deadline) {
+            const d   = (t.deadline || '').replace(/\s/g, '');
+            const map = { today: '今日中', tomorrow: '明日中', thisweek: '今週中', unknown: '期限不明' };
+            if (d !== map[activeFilters.deadline]) return false;
+        }
+        return true;
+    });
+}
+
+window.setFilter = function(type, value) {
+    activeFilters[type] = (activeFilters[type] === value) ? null : value;
+    document.querySelectorAll(`.filter-chip[data-type="${type}"]`).forEach(el => {
+        el.classList.toggle('active', el.dataset.value === (activeFilters[type] ?? '__all__'));
+    });
+    renderFilteredTasks();
+};
+
 // ===== Supabase Cache =====
 function sbHeaders(extra = {}) {
     return {
@@ -331,11 +355,17 @@ async function syncTasks() {
         setSyncStatus('メールを取得中...');
         const gmailMsgs = await fetchGmailMessages();
         setSyncStatus(`${gmailMsgs.length}件を AI 分析中...`);
-        const tasks = await analyzeWithGemini(gmailMsgs);
+
+        // バッチ完了ごとに逐次描画
+        const tasks = await analyzeWithGemini(gmailMsgs, (partial) => {
+            lastFetchedTasks = partial;
+            renderFilteredTasks();
+            setSyncStatus(`AI分析中... ${partial.length}件検出（継続中）`);
+        });
 
         lastFetchedTasks = tasks;
         renderFilteredTasks();
-        setSyncStatus(`完了 ${new Date().toLocaleTimeString()} (${gmailMsgs.length}件分析)`);
+        setSyncStatus(`完了 ${new Date().toLocaleTimeString()} (${gmailMsgs.length}件分析 / ${tasks.length}件検出)`);
     } catch (err) {
         console.error("Sync failed:", err);
         setSyncStatus('同期エラー');
@@ -474,7 +504,7 @@ async function analyzeOneBatch(apiUrl, batch, allMessages) {
     }
 }
 
-async function analyzeWithGemini(messages) {
+async function analyzeWithGemini(messages, onProgress) {
     if (messages.length === 0) return [];
     if (!config.geminiKey) return [{
         source: 'System', priority: 'mid', title: 'API Key Missing', desc: 'Settingsから設定してください。'
@@ -483,9 +513,9 @@ async function analyzeWithGemini(messages) {
     const modelName = config.geminiModel || 'gemini-2.0-flash-lite';
     const apiUrl    = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${config.geminiKey}`;
 
-    // 150件ずつバッチ（最大450件 = 3バッチ）
+    // 150件ずつバッチ（最大 900件 = 6バッチ）
     const BATCH_SIZE = 150;
-    const targets    = messages.slice(0, 450);
+    const targets    = messages.slice(0, 900);
     const batches    = [];
     for (let i = 0; i < targets.length; i += BATCH_SIZE) {
         batches.push(targets.slice(i, i + BATCH_SIZE));
@@ -496,6 +526,10 @@ async function analyzeWithGemini(messages) {
         setSyncStatus(`AI分析中... バッチ ${b + 1} / ${batches.length}（計 ${targets.length} 件）`);
         const results = await analyzeOneBatch(apiUrl, batches[b], messages);
         allResults.push(...results);
+
+        // バッチ完了ごとに画面へ反映
+        if (onProgress) onProgress([...allResults]);
+
         // バッチ間にウェイト（レートリミット対策）
         if (b < batches.length - 1) await new Promise(r => setTimeout(r, 1200));
     }
@@ -564,8 +598,7 @@ function renderTasks(tasks, isArchive = false) {
 }
 
 function renderFilteredTasks() {
-    const filtered = lastFetchedTasks.filter(t => !config.doneTasks.includes(t.refId));
-    renderTasks(filtered);
+    renderTasks(applyFilters(lastFetchedTasks));
 }
 
 function renderArchive() {
