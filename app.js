@@ -17,20 +17,21 @@ let autoSyncInterval = null;
 let lastFetchedTasks = []; // Cache for current tasks
 
 // Global level init handlers
-window.gapiLoaded = function() {
-    gapi.load('client', () => {
-        gapiInited = true;
-        checkBeforeLogin();
-    });
-};
+// gapiLoaded removed
 
-window.initGis = function() {
+window.gisLoaded = function() {
+    console.log("Google Identity Services (GIS) loaded");
     gisInited = true;
     checkBeforeLogin();
 };
 
+function initGis() {
+    // Legacy support
+}
+
 function checkBeforeLogin() {
-    // Only proceed if DOM is ready AND gapi/gis are inited
+    console.log("Checking before login status...", { inited: gisInited, hasClientId: !!config.clientId });
+    
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', checkBeforeLogin);
         return;
@@ -43,17 +44,22 @@ function checkBeforeLogin() {
             callback: (resp) => {
                 if (resp.error) {
                     console.error("Token error:", resp);
+                    alert("Auth failed: " + resp.error);
                     return;
                 }
                 accessToken = resp.access_token;
                 onLoginSuccess();
             },
         });
-        const loginBtn = document.getElementById('login-btn');
-        if (loginBtn) loginBtn.style.display = 'block';
+        console.log("Token client initialized");
     } else if (!config.clientId) {
-        const setupDiv = document.getElementById('setup-initial');
-        if (setupDiv) setupDiv.style.display = 'block';
+        console.warn("No Client ID found. Please set it in Settings.");
+        // If no client ID, stay on login view but suggest settings
+        const loginBtn = document.getElementById('login-btn');
+        if (loginBtn) {
+            loginBtn.innerText = "Please set Client ID in Settings first";
+            loginBtn.disabled = true;
+        }
     }
 }
 
