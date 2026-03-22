@@ -4,17 +4,12 @@ let gapiInited = false;
 let gisInited = false;
 
 // Settings (persist in localStorage)
-const SUPABASE_URL_DEFAULT = 'https://eiobjituoalgxmvqvceu.supabase.co';
-const SUPABASE_KEY_DEFAULT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVpb2JqaXR1b2FsZ3htdnF2Y2V1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQxNjgxNjEsImV4cCI6MjA4OTc0NDE2MX0.1Wmqq-WSWiuLcrlJ0-ZAEzfAgmhMofnSsmQvnokjpE0';
-
 const config = {
-    clientId:     localStorage.getItem('google_client_id')    || '710668584134-j2bdh6dptd1d46uojgqofubfn70out0g.apps.googleusercontent.com',
-    geminiKey:    localStorage.getItem('gemini_api_key')      || '',
-    geminiModel:  localStorage.getItem('gemini_model')        || 'gemini-3.1-flash-lite-preview',
-    supabaseUrl:  localStorage.getItem('supabase_url')        || SUPABASE_URL_DEFAULT,
-    supabaseKey:  localStorage.getItem('supabase_key')        || SUPABASE_KEY_DEFAULT,
-    criteria:     localStorage.getItem('extraction_criteria') || "直近10日以内の ishigami@isl.gr.jp / tlp@isl.gr.jp / slp@isl.gr.jp 宛メールから、質問、依頼、内容確認、および総合的に見て対応が必要、または少しでも対応が必要と思わせるタスクを抽出してください。",
-    doneTasks:    JSON.parse(localStorage.getItem('done_tasks')     || '[]'),
+    clientId:    localStorage.getItem('google_client_id')    || '710668584134-j2bdh6dptd1d46uojgqofubfn70out0g.apps.googleusercontent.com',
+    geminiKey:   localStorage.getItem('gemini_api_key')      || '',
+    geminiModel: localStorage.getItem('gemini_model')        || 'gemini-3.1-flash-lite-preview',
+    criteria:    localStorage.getItem('extraction_criteria') || "直近10日以内の ishigami@isl.gr.jp / tlp@isl.gr.jp / slp@isl.gr.jp 宛メールから、質問、依頼、内容確認、および総合的に見て対応が必要、または少しでも対応が必要と思わせるタスクを抽出してください。",
+    doneTasks:   JSON.parse(localStorage.getItem('done_tasks')     || '[]'),
     archivedTasks:JSON.parse(localStorage.getItem('archived_tasks') || '[]')
 };
 
@@ -65,70 +60,121 @@ window.setFilter = function(type, value) {
     renderFilteredTasks();
 };
 
-// ===== Supabase Cache =====
-function sbHeaders(extra = {}) {
-    return {
-        'apikey':         config.supabaseKey,
-        'Authorization':  `Bearer ${config.supabaseKey}`,
-        'Content-Type':   'application/json',
-        ...extra
-    };
+// ===== Google Drive appDataFolder helpers =====
+const DRIVE_API = 'https://www.googleapis.com/drive/v3';
+const DRIVE_UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
+
+function driveHeaders(extra = {}) {
+    return { 'Authorization': `Bearer ${accessToken}`, ...extra };
 }
 
-// ids[] を 200件ずつ分割して SELECT
-async function cacheGet(ids) {
-    const map = new Map();
-    if (!config.supabaseUrl || !config.supabaseKey) return map;
-    for (let i = 0; i < ids.length; i += 200) {
-        try {
-            const chunk = ids.slice(i, i + 200).join(',');
-            const res   = await fetch(
-                `${config.supabaseUrl}/rest/v1/gmail_messages?id=in.(${chunk})&select=id,data`,
-                { headers: sbHeaders() }
+// ファイル名からファイルIDを検索（なければ null）
+async function driveFindFile(name) {
+    try {
+        const res = await fetch(
+            `${DRIVE_API}/files?spaces=appDataFolder&q=${encodeURIComponent(`name='${name}'`)}&fields=files(id,name)`,
+            { headers: driveHeaders() }
+        );
+        if (!res.ok) return null;
+        const data = await res.json();
+        return data.files?.[0]?.id || null;
+    } catch (e) { console.warn('driveFindFile error', e); return null; }
+}
+
+// ファイルIDの内容を JSON として読み込む
+async function driveReadFile(fileId) {
+    try {
+        const res = await fetch(
+            `${DRIVE_API}/files/${fileId}?alt=media`,
+            { headers: driveHeaders() }
+        );
+        if (!res.ok) return null;
+        return await res.json();
+    } catch (e) { console.warn('driveReadFile error', e); return null; }
+}
+
+// ファイルを作成または上書き保存する（data はオブジェクト）
+async function driveWriteFile(fileId, name, data) {
+    const body = JSON.stringify(data);
+    try {
+        if (fileId) {
+            // 既存ファイルを上書き
+            const res = await fetch(
+                `${DRIVE_UPLOAD}/files/${fileId}?uploadType=media`,
+                { method: 'PATCH', headers: driveHeaders({ 'Content-Type': 'application/json' }), body }
             );
-            if (res.ok) {
-                const rows = await res.json();
-                rows.forEach(r => map.set(r.id, r.data));
-            } else {
-                console.warn('cacheGet error', await res.text());
-            }
-        } catch (e) { console.warn('cacheGet fetch error', e); }
+            if (!res.ok) console.warn('driveWriteFile update error', await res.text());
+            return fileId;
+        } else {
+            // 新規作成（multipart）
+            const meta = JSON.stringify({ name, parents: ['appDataFolder'] });
+            const boundary = 'boundary_xyz';
+            const multipart = `--${boundary}\r\nContent-Type: application/json\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${boundary}--`;
+            const res = await fetch(
+                `${DRIVE_UPLOAD}/files?uploadType=multipart`,
+                { method: 'POST', headers: driveHeaders({ 'Content-Type': `multipart/related; boundary=${boundary}` }), body: multipart }
+            );
+            if (!res.ok) { console.warn('driveWriteFile create error', await res.text()); return null; }
+            const created = await res.json();
+            return created.id || null;
+        }
+    } catch (e) { console.warn('driveWriteFile error', e); return null; }
+}
+
+// ファイルを削除する
+async function driveDeleteFile(fileId) {
+    if (!fileId) return;
+    try {
+        await fetch(`${DRIVE_API}/files/${fileId}`, { method: 'DELETE', headers: driveHeaders() });
+    } catch (e) { console.warn('driveDeleteFile error', e); }
+}
+
+// ===== Gmail メッセージキャッシュ（in-memory + Drive flush）=====
+let _msgCache   = null;   // Map<id, message>  ← null は未ロード
+let _msgCacheId = null;   // Drive ファイルID
+
+async function loadMsgCache() {
+    if (_msgCache !== null) return;   // 既にロード済み
+    _msgCacheId = await driveFindFile('gmail_cache.json');
+    if (_msgCacheId) {
+        const data = await driveReadFile(_msgCacheId);
+        _msgCache = new Map(Array.isArray(data) ? data.map(m => [m.id, m]) : []);
+    } else {
+        _msgCache = new Map();
     }
+}
+
+async function flushMsgCache() {
+    if (!_msgCache || _msgCache.size === 0) return;
+    const arr  = [..._msgCache.values()];
+    const newId = await driveWriteFile(_msgCacheId, 'gmail_cache.json', arr);
+    if (newId) _msgCacheId = newId;
+}
+
+// ids[] から in-memory キャッシュを検索
+function cacheGet(ids) {
+    const map = new Map();
+    if (!_msgCache) return map;
+    ids.forEach(id => { if (_msgCache.has(id)) map.set(id, _msgCache.get(id)); });
     return map;
 }
 
-// messages[] を 100件ずつ UPSERT
-async function cacheSet(messages) {
-    if (!messages.length || !config.supabaseUrl || !config.supabaseKey) return;
-    const rows = messages.map(m => ({ id: m.id, data: m }));
-    for (let i = 0; i < rows.length; i += 100) {
-        try {
-            await fetch(`${config.supabaseUrl}/rest/v1/gmail_messages`, {
-                method:  'POST',
-                headers: sbHeaders({ 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
-                body:    JSON.stringify(rows.slice(i, i + 100))
-            });
-        } catch (e) { console.warn('cacheSet error', e); }
-    }
+// メッセージを in-memory キャッシュに追加（Drive flush は syncTasks 末尾で一括）
+function cacheSet(messages) {
+    if (!_msgCache) _msgCache = new Map();
+    messages.forEach(m => _msgCache.set(m.id, m));
 }
 
-window.copySql = function() {
-    const sql = document.getElementById('setup-sql')?.innerText || '';
-    navigator.clipboard.writeText(sql).then(() => {
-        const btn = document.getElementById('sql-copy-btn');
-        if (btn) { btn.innerText = 'コピーしました ✓'; setTimeout(() => btn.innerText = 'コピー', 2000); }
-    });
-};
-
 window.clearGmailCache = async function() {
-    if (!config.supabaseUrl || !config.supabaseKey) { alert('Supabase が設定されていません。'); return; }
+    if (!accessToken) { alert('ログインが必要です。'); return; }
     try {
-        const res = await fetch(
-            `${config.supabaseUrl}/rest/v1/gmail_messages?cached_at=not.is.null`,
-            { method: 'DELETE', headers: sbHeaders({ 'Prefer': 'return=minimal' }) }
-        );
-        if (res.ok) alert('Supabase キャッシュをクリアしました。次回同期時に全件再取得します。');
-        else alert('クリア失敗: ' + await res.text());
+        await loadMsgCache();
+        if (_msgCacheId) {
+            await driveDeleteFile(_msgCacheId);
+            _msgCacheId = null;
+        }
+        _msgCache = new Map();
+        alert('メールキャッシュをクリアしました。次回同期時に全件再取得します。');
     } catch (e) { alert('エラー: ' + e.message); }
 };
 
@@ -190,7 +236,7 @@ function checkBeforeLogin() {
     if (config.clientId && gisInited) {
         tokenClient = google.accounts.oauth2.initTokenClient({
             client_id: config.clientId,
-            scope: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar',
+            scope: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/drive.appdata',
             callback: handleTokenResponse,
         });
 
@@ -247,13 +293,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const ci = document.getElementById('client-id-input');
         const gk = document.getElementById('gemini-key-input');
         const ct = document.getElementById('criteria-textarea');
-        const su = document.getElementById('supabase-url-input');
-        const sk = document.getElementById('supabase-key-input');
-        if (ci) ci.value = config.clientId    || '';
-        if (gk) gk.value = config.geminiKey   || '';
-        if (ct) ct.value = config.criteria     || '';
-        if (su) su.value = config.supabaseUrl  || '';
-        if (sk) sk.value = config.supabaseKey  || '';
+        if (ci) ci.value = config.clientId  || '';
+        if (gk) gk.value = config.geminiKey || '';
+        if (ct) ct.value = config.criteria  || '';
 
         setActiveNav('nav-settings');
     });
@@ -267,15 +309,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const m            = document.getElementById('gemini-model-select').value;
             config.geminiModel = m === 'custom' ? document.getElementById('gemini-custom-model').value : m;
             config.criteria    = document.getElementById('criteria-textarea').value;
-            config.supabaseUrl = document.getElementById('supabase-url-input').value;
-            config.supabaseKey = document.getElementById('supabase-key-input').value;
 
             localStorage.setItem('google_client_id',    config.clientId);
             localStorage.setItem('gemini_api_key',      config.geminiKey);
             localStorage.setItem('gemini_model',        config.geminiModel);
             localStorage.setItem('extraction_criteria', config.criteria);
-            localStorage.setItem('supabase_url',        config.supabaseUrl);
-            localStorage.setItem('supabase_key',        config.supabaseKey);
 
             closeModal('settings-modal');
             syncTasks();
@@ -342,33 +380,26 @@ function closeModal(id) {
     if (el) el.classList.remove('open');
 }
 
-// ===== DB persistence for tasks =====
-async function loadTasksFromDB() {
-    if (!config.supabaseUrl || !config.supabaseKey) return null;
+// ===== Drive persistence for tasks =====
+let _tasksFileId = null;
+
+async function loadTasksFromDrive() {
     try {
-        const res = await fetch(
-            `${config.supabaseUrl}/rest/v1/app_state?key=eq.tasks&select=value`,
-            { headers: sbHeaders() }
-        );
-        if (!res.ok) return null;
-        const rows = await res.json();
-        return rows.length ? rows[0].value : null;
-    } catch (e) { console.warn('loadTasksFromDB error', e); return null; }
+        if (!_tasksFileId) _tasksFileId = await driveFindFile('tasks.json');
+        if (!_tasksFileId) return null;
+        return await driveReadFile(_tasksFileId);
+    } catch (e) { console.warn('loadTasksFromDrive error', e); return null; }
 }
 
-async function saveTasksToDB(tasks) {
-    if (!config.supabaseUrl || !config.supabaseKey) return;
+async function saveTasksToDrive(tasks) {
     try {
-        await fetch(`${config.supabaseUrl}/rest/v1/app_state`, {
-            method:  'POST',
-            headers: sbHeaders({ 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
-            body:    JSON.stringify({ key: 'tasks', value: { tasks, synced_at: new Date().toISOString() } })
-        });
-    } catch (e) { console.warn('saveTasksToDB error', e); }
+        const newId = await driveWriteFile(_tasksFileId, 'tasks.json', { tasks, synced_at: new Date().toISOString() });
+        if (newId) _tasksFileId = newId;
+    } catch (e) { console.warn('saveTasksToDrive error', e); }
 }
 
-async function reloadFromDB() {
-    const data = await loadTasksFromDB();
+async function reloadFromDrive() {
+    const data = await loadTasksFromDrive();
     if (data?.tasks?.length) {
         lastFetchedTasks = data.tasks;
         renderFilteredTasks();
@@ -377,7 +408,7 @@ async function reloadFromDB() {
 
 async function loadAndDisplayTasks() {
     setSyncStatus('データを読み込み中...');
-    const data = await loadTasksFromDB();
+    const data = await loadTasksFromDrive();
     if (data?.tasks?.length) {
         lastFetchedTasks = data.tasks;
         renderFilteredTasks();
@@ -386,7 +417,7 @@ async function loadAndDisplayTasks() {
             : '不明';
         setSyncStatus(`最終同期: ${t}　(↻ で再取得)`);
     } else {
-        await syncTasks(); // DB にデータなし → 初回同期
+        await syncTasks(); // Drive にデータなし → 初回同期
     }
 }
 
@@ -400,7 +431,7 @@ function onLoginSuccess() {
         if (appView)   appView.classList.remove('hidden');
         loadAndDisplayTasks();                                // API を呼ばず DB から読む
         if (autoSyncInterval) clearInterval(autoSyncInterval);
-        autoSyncInterval = setInterval(reloadFromDB, 5 * 60 * 1000); // DB 読み込みのみ
+        autoSyncInterval = setInterval(reloadFromDrive, 5 * 60 * 1000); // Drive 読み込みのみ
     }, 300);
 }
 
@@ -472,7 +503,7 @@ async function syncTasks() {
 
         lastFetchedTasks = tasks;
         renderFilteredTasks();
-        await saveTasksToDB(tasks);  // Supabase に保存（次回起動時に再利用）
+        await saveTasksToDrive(tasks);  // Drive に保存（次回起動時に再利用）
         setSyncStatus(`完了 ${new Date().toLocaleTimeString()} (${gmailMsgs.length}件分析 / ${tasks.length}件検出)`);
     } catch (err) {
         console.error("Sync failed:", err);
@@ -509,9 +540,10 @@ async function fetchGmailMessages() {
     }
     if (allIds.length === 0) return [];
 
-    // ── Step 2: キャッシュ確認 ───────────────────────────────────────
+    // ── Step 2: Drive キャッシュをロードして確認 ─────────────────────
     setSyncStatus(`${allIds.length}件のIDを確認中...`);
-    const cached = await cacheGet(allIds);
+    await loadMsgCache();
+    const cached = cacheGet(allIds);
     const newIds = allIds.filter(id => !cached.has(id));
     setSyncStatus(`キャッシュ済: ${cached.size}件 / 新規取得: ${newIds.length}件`);
 
@@ -548,14 +580,20 @@ async function fetchGmailMessages() {
         }));
         const valid = results.filter(Boolean);
         newMessages.push(...valid);
-        await cacheSet(valid);
+        cacheSet(valid);   // in-memory のみ（Drive flush は関数末尾で一括）
         await new Promise(r => setTimeout(r, 80));
     }
 
     // ── Step 4: キャッシュ + 新規 を結合して返す ────────────────────
     const all = [...cached.values(), ...newMessages];
-    // Gmail ID は辞書順降順 ≒ 新着順
     all.sort((a, b) => (b.id > a.id ? 1 : -1));
+
+    // ── Step 5: Drive に一括フラッシュ ──────────────────────────────
+    if (newMessages.length > 0) {
+        setSyncStatus('キャッシュをDriveに保存中...');
+        await flushMsgCache();
+    }
+
     return all;
 }
 

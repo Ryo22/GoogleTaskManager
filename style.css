@@ -654,33 +654,6 @@ body {
     line-height: 1.5;
 }
 
-.sql-block {
-    position: relative;
-    background: #F8F9FA;
-    border: 1px solid var(--gmail-border);
-    border-radius: 8px;
-    overflow: hidden;
-}
-
-.sql-block pre {
-    margin: 0;
-    padding: 12px 14px;
-    font-size: 12px;
-    font-family: 'Roboto Mono', 'Courier New', monospace;
-    color: var(--gmail-text);
-    white-space: pre;
-    overflow-x: auto;
-}
-
-.sql-copy-btn {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    font-size: 11px;
-    padding: 0 10px;
-    height: 28px;
-    background: white;
-}
 
 .setting-item--danger {
     border-top: 1px solid var(--gmail-border);

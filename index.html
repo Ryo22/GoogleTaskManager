@@ -130,41 +130,9 @@
                     <textarea id="criteria-textarea" placeholder="Describe what to extract..." class="setting-textarea"></textarea>
                 </div>
 
-                <div class="setting-item">
-                    <label class="setting-label">Supabase URL</label>
-                    <input type="text" id="supabase-url-input" placeholder="https://xxxx.supabase.co" class="setting-input">
-                </div>
-
-                <div class="setting-item">
-                    <label class="setting-label">Supabase Anon Key</label>
-                    <input type="password" id="supabase-key-input" placeholder="eyJ..." class="setting-input">
-                </div>
-
-                <div class="setting-item">
-                    <label class="setting-label">Supabase テーブル初期化 SQL</label>
-                    <div class="setting-desc">Supabase ダッシュボード → SQL Editor で以下を1度だけ実行してください。</div>
-                    <div class="sql-block">
-                        <pre id="setup-sql">-- メールキャッシュ
-CREATE TABLE IF NOT EXISTS gmail_messages (
-  id        TEXT PRIMARY KEY,
-  data      JSONB NOT NULL,
-  cached_at TIMESTAMPTZ DEFAULT NOW()
-);
-ALTER TABLE gmail_messages DISABLE ROW LEVEL SECURITY;
-
--- タスク保存（起動時に再利用）
-CREATE TABLE IF NOT EXISTS app_state (
-  key   TEXT PRIMARY KEY,
-  value JSONB NOT NULL
-);
-ALTER TABLE app_state DISABLE ROW LEVEL SECURITY;</pre>
-                        <button onclick="copySql()" class="btn-outline sql-copy-btn" id="sql-copy-btn">コピー</button>
-                    </div>
-                </div>
-
                 <div class="setting-item setting-item--danger">
                     <label class="setting-label">メールキャッシュ</label>
-                    <div class="setting-desc">取得済みメールを Supabase に永続保存しています。差分のみ取得するため2回目以降は高速です。</div>
+                    <div class="setting-desc">取得済みメールを Google Drive（appDataFolder）に保存しています。差分のみ取得するため2回目以降は高速です。</div>
                     <button onclick="clearGmailCache()" class="btn-outline btn-danger">キャッシュをクリア（全件再取得）</button>
                 </div>
             </div>
