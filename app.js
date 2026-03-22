@@ -78,9 +78,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (navArchive) navArchive.addEventListener('click', () => { showView('archive-view'); setActiveNav('nav-archive'); renderArchive(); });
     if (navSettings) navSettings.addEventListener('click', () => {
         showView('settings-modal');
-        document.getElementById('client-id-input').value = config.clientId;
-        document.getElementById('gemini-key-input').value = config.geminiKey;
-        document.getElementById('criteria-textarea').value = config.criteria;
+        const ci = document.getElementById('client-id-input');
+        const gk = document.getElementById('gemini-key-input');
+        const ct = document.getElementById('criteria-textarea');
+        if (ci) ci.value = config.clientId;
+        if (gk) gk.value = config.geminiKey;
+        if (ct) ct.value = config.criteria;
     });
 
     if (cancelBtn) cancelBtn.addEventListener('click', () => { document.getElementById('settings-modal').style.display = 'none'; });
