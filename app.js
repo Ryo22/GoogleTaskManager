@@ -117,7 +117,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    if (syncBtn) syncBtn.addEventListener('click', syncTasks);
+    if (syncBtn) {
+        syncBtn.title = "手動同期 (10d)";
+        syncBtn.addEventListener('click', syncTasks);
+    }
     
     // Model Loading Functionality
     const fetchModelsBtn = document.getElementById('fetch-models-btn');
