@@ -1028,6 +1028,17 @@ function formatReceivedDate(dateStr) {
     } catch { return dateStr; }
 }
 
+// ===== Helpers =====
+function escapeHTML(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 // "山田 太郎 <taro@example.com>" → "山田 太郎"
 function extractSenderName(from) {
     if (!from) return '';
@@ -1051,7 +1062,7 @@ function renderSummary(tasks) {
 
     const high   = tasks.filter(t => t.priority === 'high').length;
     const today  = tasks.filter(t => (t.deadline || '').replace(/\s/g, '') === '今日中');
-    const urgent = today.map(t => `<span class="summary-tag">${t.title}</span>`).join('');
+    const urgent = today.map(t => `<span class="summary-tag">${escapeHTML(t.title)}</span>`).join('');
 
     el.innerHTML = `
         <div class="summary-bar">
@@ -1075,15 +1086,19 @@ function renderTasks(tasks, isArchive = false) {
     }
 
     list.innerHTML = tasks.map(task => {
-        const dateLabel   = formatReceivedDate(task.receivedDate) || task.time || '';
-        const senderLabel = extractSenderName(task.senderFrom)    || '';
-        const pri         = task.priority || 'mid';
+        const dateLabel   = escapeHTML(formatReceivedDate(task.receivedDate) || task.time || '');
+        const senderLabel = escapeHTML(extractSenderName(task.senderFrom)    || '');
+        const pri         = escapeHTML(task.priority || 'mid');
         const priEmoji    = { high: '🔴', mid: '🟡', low: '🟢' };
+        
+        const safeTitle = escapeHTML(task.title);
+        const safeDesc  = escapeHTML(task.desc);
+        const safeDeadline = escapeHTML(task.deadline);
 
         // 優先度セレクター（ホバー時に表示）
         const prioritySelector = !isArchive ? `
             <select class="priority-select" title="優先度を変更（AIが次回から学習します）"
-                onchange="changePriority('${task.refId}', this.value)"
+                onchange="changePriority('${escapeHTML(task.refId)}', this.value)"
                 onclick="event.stopPropagation()">
                 <option value="high" ${pri === 'high' ? 'selected' : ''}>🔴 高</option>
                 <option value="mid"  ${pri === 'mid'  ? 'selected' : ''}>🟡 中</option>
@@ -1091,25 +1106,25 @@ function renderTasks(tasks, isArchive = false) {
             </select>` : `<span style="font-size:13px">${priEmoji[pri] || ''}</span>`;
 
         return `
-        <div id="${isArchive ? 'arch-' : 'task-'}${task.refId}" class="task-row unread priority-${pri}">
-            <div class="sender" onclick="window.open('${task.url}', '_blank')">
+        <div id="${isArchive ? 'arch-' : 'task-'}${escapeHTML(task.refId)}" class="task-row unread priority-${pri}">
+            <div class="sender" onclick="window.open('${escapeHTML(task.url)}', '_blank')">
                 <div class="received-date">${dateLabel}</div>
                 ${senderLabel ? `<div class="received-from">${senderLabel}</div>` : ''}
             </div>
-            <div class="title-snippet" onclick="window.open('${task.url}', '_blank')">
-                <div class="task-title">${task.title}</div>
-                <div class="task-desc">${task.desc}</div>
+            <div class="title-snippet" onclick="window.open('${escapeHTML(task.url)}', '_blank')">
+                <div class="task-title">${safeTitle}</div>
+                <div class="task-desc">${safeDesc}</div>
             </div>
-            ${task.deadline ? `<div class="deadline-badge ${deadlineClass(task.deadline)}">${task.deadline}</div>` : '<div class="date"></div>'}
+            ${safeDeadline ? `<div class="deadline-badge ${deadlineClass(task.deadline)}">${safeDeadline}</div>` : '<div class="date"></div>'}
             <div class="actions">
                 ${prioritySelector}
                 ${!isArchive
-                    ? `<button onclick="addToCalendar('${task.refId}')" class="action-icon cal-btn" title="Googleカレンダーで確認・登録">📅</button>`
+                    ? `<button onclick="addToCalendar('${escapeHTML(task.refId)}')" class="action-icon cal-btn" title="Googleカレンダーで確認・登録">📅</button>`
                     : ''
                 }
                 ${isArchive
-                    ? `<button onclick="restoreTask('${task.refId}')" class="action-icon" title="Restore">⟲</button>`
-                    : `<button onclick="dismissTask('${task.refId}')" class="action-icon" title="Done">✓</button>`
+                    ? `<button onclick="restoreTask('${escapeHTML(task.refId)}')" class="action-icon" title="Restore">⟲</button>`
+                    : `<button onclick="dismissTask('${escapeHTML(task.refId)}')" class="action-icon" title="Done">✓</button>`
                 }
             </div>
         </div>
