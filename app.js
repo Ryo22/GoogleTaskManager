@@ -7,7 +7,7 @@ let gisInited = false;
 const config = {
     clientId: localStorage.getItem('google_client_id') || '710668584134-j2bdh6dptd1d46uojgqofubfn70out0g.apps.googleusercontent.com',
     geminiKey: localStorage.getItem('gemini_api_key') || '',
-    geminiModel: localStorage.getItem('gemini_model') || 'gemini-1.5-flash',
+    geminiModel: localStorage.getItem('gemini_model') || 'gemini-2.0-flash-lite',
     criteria: localStorage.getItem('extraction_criteria') || "直近10日以内の ishigami@isl.gr.jp / tlp@isl.gr.jp / slp@isl.gr.jp 宛メールから、質問、依頼、内容確認、および総合的に見て対応が必要、または少しでも対応が必要と思わせるタスクを抽出してください。",
     doneTasks: JSON.parse(localStorage.getItem('done_tasks') || '[]'),
     archivedTasks: JSON.parse(localStorage.getItem('archived_tasks') || '[]')
@@ -226,7 +226,6 @@ async function updateModelDropdown(providedKey) {
                 return `<option value="${id}" ${id === currentSelected ? 'selected' : ''}>${m.displayName} (${id})</option>`;
             });
             select.innerHTML = `
-                <option value="gemini-1.5-flash">gemini-1.5-flash (Default)</option>
                 ${options.join('')}
                 <option value="custom">-- カスタムIDを手動入力 --</option>
             `;
@@ -241,7 +240,7 @@ async function updateModelDropdown(providedKey) {
 async function syncTasks() {
     if (!accessToken) return;
     const btn = document.getElementById('sync-btn');
-    if (btn) { btn.innerText = 'Syncing...'; btn.disabled = true; btn.classList.add('spinning'); }
+    if (btn) { btn.disabled = true; }
 
     try {
         const gmailMsgs = await fetchGmailMessages();
@@ -259,8 +258,6 @@ async function syncTasks() {
     } finally {
         const syncBtn = document.getElementById('sync-btn');
         if (syncBtn) {
-            syncBtn.classList.remove('spinning');
-            syncBtn.innerText = '↻';
             syncBtn.disabled = false;
         }
     }
@@ -279,7 +276,7 @@ async function fetchGmailMessages() {
         if (!data.messages) return [];
 
         const messages   = [];
-        const messageIds = data.messages.slice(0, 60);
+        const messageIds = data.messages.slice(0, 100);
 
         for (let i = 0; i < messageIds.length; i += 5) {
             const chunk = messageIds.slice(i, i + 5);
@@ -338,11 +335,11 @@ async function analyzeWithGemini(messages) {
     ■ ユーザー独自の抽出要件:
     ${config.criteria}
 
-    ■ 出力形式 (JSON 配列のみ):
-    [{"source": "Gmail", "priority": "high|mid|low", "title": "アクションの要約", "desc": "具体的な詳細手順・内容", "time": "From/Date", "refId": "id"}]
+    ■ 出力形式 (JSON 配列のみ、他のテキストは一切含めないこと):
+    [{"source": "Gmail", "priority": "high|mid|low", "title": "アクションの要約（動詞から始める）", "desc": "具体的な対応内容", "deadline": "今日中／明日中／今週中／〇月〇日まで／期限不明 のいずれか", "time": "From/Date", "refId": "id"}]
 
     ■ データ (JSON):
-    ${JSON.stringify(messages.slice(0, 60))}
+    ${JSON.stringify(messages.slice(0, 100))}
     `;
 
     try {
@@ -376,10 +373,37 @@ async function analyzeWithGemini(messages) {
 }
 
 // ===== Render =====
+function deadlineClass(deadline) {
+    if (!deadline) return '';
+    const d = deadline.replace(/\s/g, '');
+    if (d === '今日中') return 'deadline--today';
+    if (d === '明日中') return 'deadline--tomorrow';
+    return 'deadline--other';
+}
+
+function renderSummary(tasks) {
+    const el = document.getElementById('task-summary');
+    if (!el || tasks.length === 0) { if (el) el.innerHTML = ''; return; }
+
+    const high   = tasks.filter(t => t.priority === 'high').length;
+    const today  = tasks.filter(t => (t.deadline || '').replace(/\s/g, '') === '今日中');
+    const urgent = today.map(t => `<span class="summary-tag">${t.title}</span>`).join('');
+
+    el.innerHTML = `
+        <div class="summary-bar">
+            <span class="summary-count">対応タスク <b>${tasks.length}</b> 件</span>
+            ${high > 0 ? `<span class="summary-high">高優先度 ${high} 件</span>` : ''}
+            ${today.length > 0 ? `<span class="summary-today">今日中: ${urgent}</span>` : ''}
+        </div>
+    `;
+}
+
 function renderTasks(tasks, isArchive = false) {
     const listId = isArchive ? 'archive-list' : 'task-list';
     const list   = document.getElementById(listId);
     if (!list) return;
+
+    if (!isArchive) renderSummary(tasks);
 
     if (tasks.length === 0) {
         list.innerHTML = `<div class="task-empty">${isArchive ? 'No archived tasks.' : 'No action items found. All clear!'}</div>`;
@@ -392,7 +416,7 @@ function renderTasks(tasks, isArchive = false) {
             <div class="title-snippet" onclick="window.open('${task.url}', '_blank')">
                 <b>${task.title}</b> - <span>${task.desc}</span>
             </div>
-            <div class="date">${isArchive ? '' : 'Now'}</div>
+            ${task.deadline ? `<div class="deadline-badge ${deadlineClass(task.deadline)}">${task.deadline}</div>` : '<div class="date"></div>'}
             <div class="actions">
                 ${isArchive
                     ? `<button onclick="restoreTask('${task.refId}')" class="action-icon" title="Restore">⟲</button>`

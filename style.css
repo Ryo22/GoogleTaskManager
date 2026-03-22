@@ -96,15 +96,6 @@ body {
     width: 40px;
 }
 
-@keyframes spin {
-    from { transform: rotate(0deg); }
-    to   { transform: rotate(360deg); }
-}
-
-.sync-btn.spinning {
-    animation: spin 1s linear infinite;
-}
-
 .sync-status {
     color: var(--gmail-text-dim);
 }
@@ -250,6 +241,84 @@ body {
     text-align: right;
     font-size: 12px;
     color: var(--gmail-text-dim);
+}
+
+/* ===== Deadline Badge ===== */
+.deadline-badge {
+    flex-shrink: 0;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+    background: var(--gmail-bg);
+    color: var(--gmail-text-dim);
+    border: 1px solid var(--gmail-border);
+}
+
+.deadline-badge.deadline--today {
+    background: #FDECEA;
+    color: var(--gmail-high);
+    border-color: #F5C6C2;
+}
+
+.deadline-badge.deadline--tomorrow {
+    background: #FEF7E0;
+    color: #B06000;
+    border-color: #FADDAF;
+}
+
+.deadline-badge.deadline--other {
+    background: var(--gmail-hover);
+    color: var(--gmail-text-dim);
+    border-color: var(--gmail-border);
+}
+
+/* ===== Task Summary Bar ===== */
+#task-summary {
+    border-bottom: 1px solid var(--gmail-border);
+}
+
+.summary-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 24px;
+    font-size: 13px;
+    flex-wrap: wrap;
+}
+
+.summary-count {
+    color: var(--gmail-text-dim);
+}
+
+.summary-high {
+    padding: 2px 10px;
+    border-radius: 12px;
+    background: #FDECEA;
+    color: var(--gmail-high);
+    font-weight: 500;
+    font-size: 12px;
+}
+
+.summary-today {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--gmail-text-dim);
+    font-size: 12px;
+}
+
+.summary-tag {
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: #FDECEA;
+    color: var(--gmail-high);
+    font-weight: 500;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .actions {
