@@ -562,6 +562,42 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const sendChatBtn = document.getElementById('send-chat-btn');
     if (sendChatBtn) sendChatBtn.addEventListener('click', handleChat);
+
+    // Cmd+Enter（Mac）または Ctrl+Enter（Win）で送信
+    const chatInput = document.getElementById('chat-input');
+    if (chatInput) {
+        chatInput.addEventListener('keydown', e => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                e.preventDefault();
+                handleChat();
+            }
+        });
+    }
+
+    // パネルリサイズ（ドラッグハンドル）
+    const resizer  = document.getElementById('panel-resizer');
+    const panel    = document.querySelector('.right-panel');
+    if (resizer && panel) {
+        let startX, startWidth;
+        resizer.addEventListener('mousedown', e => {
+            startX     = e.clientX;
+            startWidth = panel.offsetWidth;
+            resizer.classList.add('dragging');
+            document.addEventListener('mousemove', onPanelDrag);
+            document.addEventListener('mouseup',   onPanelDragEnd);
+            e.preventDefault();
+        });
+        function onPanelDrag(e) {
+            const dx  = startX - e.clientX;   // 左へドラッグ → 広くなる
+            const newW = Math.max(200, Math.min(700, startWidth + dx));
+            panel.style.width = newW + 'px';
+        }
+        function onPanelDragEnd() {
+            resizer.classList.remove('dragging');
+            document.removeEventListener('mousemove', onPanelDrag);
+            document.removeEventListener('mouseup',   onPanelDragEnd);
+        }
+    }
 });
 
 // ===== Modal helpers =====
@@ -1155,11 +1191,44 @@ async function handleChat() {
     }
 }
 
+// シンプルなマークダウン → HTML 変換（AIメッセージ用）
+function renderMarkdown(text) {
+    // HTML エスケープ
+    let s = text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+    // 水平線
+    s = s.replace(/^---+$/gm, '<hr>');
+    // 見出し
+    s = s.replace(/^### (.+)$/gm, '<h4>$1</h4>');
+    s = s.replace(/^## (.+)$/gm,  '<h3>$1</h3>');
+    s = s.replace(/^# (.+)$/gm,   '<h2>$1</h2>');
+    // 太字・斜体
+    s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+    s = s.replace(/\*\*(.+?)\*\*/g,     '<strong>$1</strong>');
+    s = s.replace(/\*(.+?)\*/g,         '<em>$1</em>');
+    // 箇条書き（行頭 - または *）
+    s = s.replace(/^[*\-] (.+)$/gm, '<li>$1</li>');
+    // 連続する <li> を <ul> で囲む
+    s = s.replace(/(<li>[\s\S]+?<\/li>)(?=\s*(?:<li>|$))/g, (m) => m);
+    s = s.replace(/((?:<li>[\s\S]*?<\/li>\n?)+)/g, '<ul>$1</ul>');
+    // 段落（空行 → 改行）
+    s = s.replace(/\n{2,}/g, '<br><br>');
+    s = s.replace(/\n/g, '<br>');
+    return s;
+}
+
 function appendChatMessage(role, text) {
     const history = document.getElementById('chat-history');
     const msg     = document.createElement('div');
     msg.classList.add('chat-message', `chat-message--${role}`);
-    msg.innerText = text;
+    if (role === 'ai') {
+        msg.innerHTML = renderMarkdown(text);
+    } else {
+        msg.textContent = text;
+    }
     history.appendChild(msg);
     history.scrollTop = history.scrollHeight;
 }

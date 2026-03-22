@@ -546,13 +546,30 @@ body {
 
 .action-icon:hover { background: rgba(0,0,0,0.08); }
 
+/* ===== Panel Resizer ===== */
+.panel-resizer {
+    width: 5px;
+    cursor: col-resize;
+    background: transparent;
+    border-left: 1px solid var(--gmail-border);
+    flex-shrink: 0;
+    transition: background 0.15s;
+}
+.panel-resizer:hover,
+.panel-resizer.dragging {
+    background: rgba(99, 102, 241, 0.25);
+}
+
 /* ===== Right Panel (Chat) ===== */
 .right-panel {
     width: 320px;
-    border-left: 1px solid var(--gmail-border);
+    min-width: 200px;
+    max-width: 700px;
+    border-left: none;
     display: flex;
     flex-direction: column;
     background: var(--gmail-white);
+    overflow: hidden;
 }
 
 .chat-container {
@@ -599,6 +616,24 @@ body {
     background: var(--gmail-bg);
     border: 1px solid var(--glass-border);
 }
+
+/* Markdown styles inside AI messages */
+.chat-message--ai h2,
+.chat-message--ai h3,
+.chat-message--ai h4 {
+    margin: 10px 0 4px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--gmail-text);
+}
+.chat-message--ai h2 { font-size: 14px; }
+.chat-message--ai p  { margin: 4px 0; }
+.chat-message--ai ul,
+.chat-message--ai ol { margin: 4px 0 4px 16px; padding: 0; }
+.chat-message--ai li { margin: 2px 0; }
+.chat-message--ai hr { border: none; border-top: 1px solid var(--gmail-border); margin: 8px 0; }
+.chat-message--ai strong { font-weight: 700; }
+.chat-message--ai em { font-style: italic; }
 
 /* ===== Input Group ===== */
 .input-group {
