@@ -418,6 +418,17 @@ function checkBeforeLogin() {
             client_id: config.clientId,
             scope: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/drive.file',
             callback: handleTokenResponse,
+            error_callback: (err) => {
+                console.warn('GIS error:', err.type, err);
+                showLoginButton();
+                // ポップアップがブロックされた場合にガイドを表示
+                if (err.type === 'popup_failed_to_open' || err.type === 'popup_closed') {
+                    const status = document.getElementById('login-status');
+                    if (status) {
+                        status.innerHTML = 'ポップアップがブロックされました。<br>ブラウザのアドレスバー右端のアイコンからポップアップを許可してください。';
+                    }
+                }
+            }
         });
 
         if (localStorage.getItem('was_logged_in')) {
@@ -899,16 +910,35 @@ ${profileRule}${feedbackSection}
     ${JSON.stringify(batch)}
     `;
 
+    const MAX_RETRY = 3;
+    let raw;
+    for (let attempt = 0; attempt < MAX_RETRY; attempt++) {
+        try {
+            const res = await fetch(apiUrl, {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({
+                    contents:         [{ parts: [{ text: prompt }] }],
+                    generationConfig: { maxOutputTokens: 8192 }
+                })
+            });
+            raw = await res.json();
+            // 429 Rate Limit → 指数バックオフで再試行
+            if (raw.error?.code === 429) {
+                const wait = (attempt + 1) * 8000; // 8s, 16s, 24s
+                console.warn(`Gemini 429: retrying in ${wait / 1000}s (attempt ${attempt + 1}/${MAX_RETRY})`);
+                setSyncStatus(`API レート制限中... ${wait / 1000}秒後に再試行 (${attempt + 1}/${MAX_RETRY})`);
+                await new Promise(r => setTimeout(r, wait));
+                continue;
+            }
+            break; // 成功 or 429以外のエラー
+        } catch (e) {
+            console.error('analyzeOneBatch fetch error', e);
+            return [];
+        }
+    }
     try {
-        const res = await fetch(apiUrl, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({
-                contents:         [{ parts: [{ text: prompt }] }],
-                generationConfig: { maxOutputTokens: 8192 }
-            })
-        });
-        const raw = await res.json();
+        if (!raw) return [];
         if (raw.error) { console.error('Gemini batch error', raw.error.message); return []; }
         if (!raw.candidates?.length) return [];
 
@@ -956,7 +986,7 @@ async function analyzeWithGemini(messages, onProgress) {
         if (onProgress) onProgress([...allResults]);
 
         // バッチ間にウェイト（レートリミット対策）
-        if (b < batches.length - 1) await new Promise(r => setTimeout(r, 1200));
+        if (b < batches.length - 1) await new Promise(r => setTimeout(r, 3000));
     }
 
     return allResults;
