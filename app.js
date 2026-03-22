@@ -8,7 +8,7 @@ const config = {
     clientId: localStorage.getItem('google_client_id') || '710668584134-j2bdh6dptd1d46uojgqofubfn70out0g.apps.googleusercontent.com',
     geminiKey: localStorage.getItem('gemini_api_key') || '',
     geminiModel: localStorage.getItem('gemini_model') || 'gemini-1.5-flash',
-    criteria: localStorage.getItem('extraction_criteria') || "質問、依頼、内容確認の依頼、期限付きの連絡、自分が対応すべきタスク。ishigami|tlp|slp 宛のメールを重点的に。",
+    criteria: localStorage.getItem('extraction_criteria') || "直近10日以内の ishigami@isl.gr.jp / tlp@isl.gr.jp / slp@isl.gr.jp 宛メールから、質問、依頼、内容確認、および総合的に見て対応が必要、または少しでも対応が必要と思わせるタスクを抽出してください。",
     doneTasks: JSON.parse(localStorage.getItem('done_tasks') || '[]'),
     archivedTasks: JSON.parse(localStorage.getItem('archived_tasks') || '[]')
 };
@@ -259,19 +259,19 @@ async function syncTasks() {
 async function fetchGmailMessages() {
     // Specific query matching user criteria:
     // To: ishigami|tlp|slp, Newer: 7d, NOT from: tlp|slp
-    const q = '(to:ishigami@isl.gr.jp OR to:tlp@isl.gr.jp OR to:slp@isl.gr.jp) -from:tlp@isl.gr.jp -from:slp@isl.gr.jp newer_than:7d';
-    const response = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=100&q=${encodeURIComponent(q)}`, {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-    });
-    // Check for 403 Forbidden
-    if (response.status === 403) {
-        throw new Error("Gmail API Forbidden (403): Please enable Gmail API in Google Cloud Console.");
-    }
-    const data = await response.json();
-    if (!data.messages) return [];
+    const query = `(to:ishigami@isl.gr.jp OR to:tlp@isl.gr.jp OR to:slp@isl.gr.jp) -from:tlp@isl.gr.jp -from:slp@isl.gr.jp newer_than:10d`;
+    
+    try {
+        console.log("Fetching Gmail with 10d focus...");
+        const response = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=200&q=${encodeURIComponent(query)}`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        const data = await response.json();
+        if (!data.messages) return [];
 
-    const messages = [];
-    const messageIds = data.messages.slice(0, 40); // Detailed fetch limited to 40 items to avoid rate limits
+        const messages = [];
+        const messageIds = data.messages.slice(0, 60); // Increase limit to 60 for more coverage
+
 
     // Fetch details in small chunks to avoid 429 Too Many Requests
     for (let i = 0; i < messageIds.length; i += 5) {
@@ -304,7 +304,11 @@ async function fetchGmailMessages() {
         await new Promise(r => setTimeout(r, 100));
     }
     
-    return messages;
+        return messages;
+    } catch (err) {
+        console.error("Gmail fetch error:", err);
+        throw err;
+    }
 }
 
 async function analyzeWithGemini(messages) {
@@ -316,21 +320,21 @@ async function analyzeWithGemini(messages) {
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${config.geminiKey}`;
     
     const prompt = `
-    Analyze these Gmail messages and extract EVERY "ACTION REQUIRED" task.
-    User's Extraction Criteria:
-    - Target Recipient: ishigami@isl.gr.jp OR tlp@isl.gr.jp OR slp@isl.gr.jp 宛のメール
-    - Rules: 質問、依頼、内容確認の依頼、期限付きの連絡、自分が対応すべきタスク
-    - Exclusivity: 具体的で詳細な手順を出力すること
+    以下のメールリストを分析し、「対応が必要なタスク」を漏れなく抽出してください。
     
-    CRITICAL INSTRUCTIONS:
-    - Provide a CONCRETE and DETAILED action (e.g., "Reply to [Name] about [Subject] by tomorrow morning").
-    - You MUST include the "refId" which is the exact "id" from the source message data.
+    ■ 抽出基準（優先順位）：
+    1. 質問、依頼、内容確認などの依頼
+    2. 総合的に見て対応が必要と思われる、または少しでも対応が必要そうなタスク（迷う場合は抽出に含める）
+    3. 返信や確認を放置すると問題になりそうな連絡
     
-    Output JSON aggregate array only:
-    [{"source": "Gmail", "priority": "high|mid|low", "title": "Task Title", "desc": "Step-by-Step Action", "time": "From/Date", "refId": "id"}]
+    ■ ユーザー独自の抽出要件:
+    ${config.criteria}
+
+    ■ 出力形式 (JSON 配列のみ):
+    [{"source": "Gmail", "priority": "high|mid|low", "title": "アクションの要約", "desc": "具体的な詳細手順・内容", "time": "From/Date", "refId": "id"}]
     
-    Data:
-    ${JSON.stringify(messages.slice(0, 40))}
+    ■ データ (JSON):
+    ${JSON.stringify(messages.slice(0, 60))}
     `;
 
     try {
