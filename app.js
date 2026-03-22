@@ -796,7 +796,12 @@ async function syncTasks() {
 }
 
 async function fetchGmailMessages() {
-    const query = `(to:ishigami@isl.gr.jp OR to:tlp@isl.gr.jp OR to:slp@isl.gr.jp) -from:tlp@isl.gr.jp -from:slp@isl.gr.jp newer_than:30d`;
+    // マイプロフィールのメールアドレスを使用（未設定の場合は全受信メールを対象）
+    const emails = (config.myEmails || '')
+        .split(',').map(e => e.trim()).filter(Boolean);
+    const query = emails.length > 0
+        ? `(${emails.map(e => `to:${e}`).join(' OR ')}) newer_than:30d`
+        : `in:inbox newer_than:30d`;
     const headers = { 'Authorization': `Bearer ${accessToken}` };
 
     // ── Step 1: ページネーションで最大1000件のIDを取得 ──────────────
