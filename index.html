@@ -12,9 +12,9 @@
 <body>
 
     <div id="login-view">
-        <img src="https://www.gstatic.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png" height="50" style="margin-bottom: 24px;">
-        <h1 style="font-size: 24px; margin-bottom: 40px; font-weight: 400;">Sign in to Task Manager</h1>
-        <button id="login-btn" class="btn-primary" style="padding: 12px 40px; font-size: 16px;">Google でログイン</button>
+        <img src="https://www.gstatic.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png" height="50" class="login-logo">
+        <h1 class="login-title">Sign in to Task Manager</h1>
+        <button id="login-btn" class="btn-primary login-btn">Google でログイン</button>
     </div>
 
     <div class="top-bar">
@@ -23,9 +23,9 @@
             <span>Gmail Task Manager</span>
         </div>
         <div class="user-area">
-            <button id="sync-btn" class="action-icon" title="手動同期" style="font-size: 20px; font-weight: bold; margin-right: 12px; height: 40px; width: 40px;">↻</button>
-            <span id="sync-status" style="color: var(--gmail-text-dim); margin-right: 12px;">Ready</span>
-            <div id="user-info" style="font-weight: 500;">Guest User</div>
+            <button id="sync-btn" class="action-icon sync-btn" title="手動同期">↻</button>
+            <span id="sync-status" class="sync-status">Ready</span>
+            <div id="user-info" class="user-info">Guest User</div>
         </div>
     </div>
 
@@ -36,16 +36,16 @@
             <div id="nav-settings" class="nav-item">Settings</div>
         </aside>
 
-        <main id="app-view" class="content-area" style="display: none;">
+        <main id="app-view" class="content-area hidden">
             <div id="feed-view" class="view">
                 <div class="view-header">
                     <h2>Primary Tasks</h2>
-                    <div style="font-size: 12px; color: var(--gmail-text-dim);">Action required items</div>
+                    <div class="view-subtitle">Action required items</div>
                 </div>
                 <div id="task-list" class="task-list"></div>
             </div>
 
-            <div id="archive-view" class="view" style="display: none;">
+            <div id="archive-view" class="view hidden">
                 <div class="view-header">
                     <h2>All Completed</h2>
                 </div>
@@ -55,8 +55,8 @@
 
         <aside class="right-panel">
             <div class="chat-container">
-                <h3 style="font-size: 14px; margin-bottom: 16px; color: var(--gmail-text-dim);">Side Panel Chat</h3>
-                <div id="chat-history"></div>
+                <h3 class="chat-title">Side Panel Chat</h3>
+                <div id="chat-history" class="chat-history"></div>
                 <div class="input-group">
                     <input type="text" id="chat-input" placeholder="Ask AI..." class="input-field">
                     <button id="send-chat-btn" class="btn-circle">➤</button>
@@ -67,42 +67,42 @@
 
     <!-- Settings Modal -->
     <div id="settings-modal" class="modal">
-        <div class="modal-content" style="border: none; box-shadow: 0 24px 80px rgba(0,0,0,0.15); border-radius: 28px; padding: 40px;">
-            <h2 style="font-weight: 500; margin-bottom: 32px; font-size: 24px; letter-spacing: -0.2px;">Settings</h2>
-            
-            <div style="display: flex; flex-direction: column; gap: 24px;">
+        <div class="modal-content">
+            <h2 class="modal-title">Settings</h2>
+
+            <div class="settings-form">
                 <div class="setting-item">
-                    <label style="display: block; margin-bottom: 8px; font-size: 14px; font-weight: 500; color: var(--gmail-text-dim);">Google Client ID</label>
-                    <input type="text" id="client-id-input" placeholder="Enter OAuth Client ID" style="width:100%; padding:14px; border:1px solid #DADCE0; border-radius:8px; font-size: 14px; transition: border-color 0.2s, box-shadow 0.2s;">
+                    <label class="setting-label">Google Client ID</label>
+                    <input type="text" id="client-id-input" placeholder="Enter OAuth Client ID" class="setting-input">
                 </div>
 
                 <div class="setting-item">
-                    <label style="display: block; margin-bottom: 8px; font-size: 14px; font-weight: 500; color: var(--gmail-text-dim);">Gemini API Key</label>
-                    <input type="password" id="gemini-key-input" placeholder="Enter Gemini Key" style="width:100%; padding:14px; border:1px solid #DADCE0; border-radius:8px; font-size: 14px;">
+                    <label class="setting-label">Gemini API Key</label>
+                    <input type="password" id="gemini-key-input" placeholder="Enter Gemini Key" class="setting-input">
                 </div>
 
                 <div class="setting-item">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                        <label style="font-size: 14px; font-weight: 500; color: var(--gmail-text-dim);">Gemini Model</label>
-                        <button id="fetch-models-btn" class="btn-outline" style="font-size: 12px; height: 32px; padding: 0 12px; border-radius: 16px;">利用可能なモデルをロード</button>
+                    <div class="setting-row">
+                        <label class="setting-label">Gemini Model</label>
+                        <button id="fetch-models-btn" class="btn-outline">利用可能なモデルをロード</button>
                     </div>
-                    <select id="gemini-model-select" style="width:100%; padding:14px; border:1px solid #DADCE0; border-radius:8px; font-size: 14px; background-color: #fff; cursor: pointer;">
+                    <select id="gemini-model-select" class="setting-select">
                         <option value="gemini-1.5-flash">gemini-1.5-flash (Default)</option>
                         <option value="gemini-1.5-pro">gemini-1.5-pro</option>
                         <option value="custom">-- Custom ID --</option>
                     </select>
-                    <input type="text" id="gemini-custom-model" placeholder="Enter Custom Model ID" style="display:none; width:100%; padding:14px; border:1px solid #DADCE0; border-radius:8px; font-size: 14px; margin-top: 12px;">
+                    <input type="text" id="gemini-custom-model" placeholder="Enter Custom Model ID" class="setting-input hidden">
                 </div>
 
                 <div class="setting-item">
-                    <label style="display: block; margin-bottom: 8px; font-size: 14px; font-weight: 500; color: var(--gmail-text-dim);">Extraction Criteria (AI Prompt)</label>
-                    <textarea id="criteria-textarea" placeholder="Describe what to extract..." style="width:100%; height:120px; padding:14px; border:1px solid #DADCE0; border-radius:8px; font-size: 14px; line-height: 1.6; resize: vertical;"></textarea>
+                    <label class="setting-label">Extraction Criteria (AI Prompt)</label>
+                    <textarea id="criteria-textarea" placeholder="Describe what to extract..." class="setting-textarea"></textarea>
                 </div>
             </div>
 
-            <div style="margin-top: 48px; display: flex; justify-content: flex-end; gap: 16px;">
-                <button id="cancel-settings-btn" class="btn-outline" style="min-width: 100px; height: 44px; border-radius: 22px;">Cancel</button>
-                <button id="save-settings-btn" class="btn-primary" style="min-width: 140px; height: 44px; border-radius: 22px; font-size: 14px;">Save Changes</button>
+            <div class="modal-actions">
+                <button id="cancel-settings-btn" class="btn-outline">Cancel</button>
+                <button id="save-settings-btn" class="btn-primary">Save Changes</button>
             </div>
         </div>
     </div>

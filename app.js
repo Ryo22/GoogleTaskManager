@@ -16,9 +16,6 @@ const config = {
 let autoSyncInterval = null;
 let lastFetchedTasks = []; // Cache for current tasks
 
-// Global level init handlers
-// gapiLoaded removed
-
 window.gisLoaded = function() {
     console.log("Google Identity Services (GIS) loaded");
     gisInited = true;
@@ -31,7 +28,7 @@ function initGis() {
 
 function checkBeforeLogin() {
     console.log("Checking before login status...", { inited: gisInited, hasClientId: !!config.clientId });
-    
+
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', checkBeforeLogin);
         return;
@@ -54,7 +51,6 @@ function checkBeforeLogin() {
         console.log("Token client initialized");
     } else if (!config.clientId) {
         console.warn("No Client ID found. Please set it in Settings.");
-        // If no client ID, stay on login view but suggest settings
         const loginBtn = document.getElementById('login-btn');
         if (loginBtn) {
             loginBtn.innerText = "Please set Client ID in Settings first";
@@ -64,55 +60,61 @@ function checkBeforeLogin() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Nav & Settings listeners
-    const navTasks = document.getElementById('nav-tasks');
-    const navArchive = document.getElementById('nav-archive');
+    const navTasks    = document.getElementById('nav-tasks');
+    const navArchive  = document.getElementById('nav-archive');
     const navSettings = document.getElementById('nav-settings');
-    const saveBtn = document.getElementById('save-settings-btn');
-    const cancelBtn = document.getElementById('cancel-settings-btn');
-    const syncBtn = document.getElementById('sync-btn');
-    const loginBtn = document.getElementById('login-btn');
+    const saveBtn     = document.getElementById('save-settings-btn');
+    const cancelBtn   = document.getElementById('cancel-settings-btn');
+    const syncBtn     = document.getElementById('sync-btn');
+    const loginBtn    = document.getElementById('login-btn');
 
     if (loginBtn) {
         loginBtn.addEventListener('click', () => {
-            if (tokenClient) tokenClient.requestAccessToken({prompt: 'consent'});
+            if (tokenClient) tokenClient.requestAccessToken({ prompt: 'consent' });
             else alert("Google Auth Client is still initializing...");
         });
     }
 
-    if (navTasks) navTasks.addEventListener('click', () => { showView('feed-view'); setActiveNav('nav-tasks'); });
-    if (navArchive) navArchive.addEventListener('click', () => { showView('archive-view'); setActiveNav('nav-archive'); renderArchive(); });
+    if (navTasks) navTasks.addEventListener('click', () => {
+        showView('feed-view');
+        setActiveNav('nav-tasks');
+    });
+
+    if (navArchive) navArchive.addEventListener('click', () => {
+        showView('archive-view');
+        setActiveNav('nav-archive');
+        renderArchive();
+    });
+
     if (navSettings) navSettings.addEventListener('click', () => {
-        const modal = document.getElementById('settings-modal');
-        if (modal) modal.style.display = 'flex';
-        
-        // Also populate values
+        openModal('settings-modal');
+
         const ci = document.getElementById('client-id-input');
         const gk = document.getElementById('gemini-key-input');
         const ct = document.getElementById('criteria-textarea');
         if (ci) ci.value = config.clientId || '';
         if (gk) gk.value = config.geminiKey || '';
         if (ct) ct.value = config.criteria || '';
-        
+
         setActiveNav('nav-settings');
     });
 
-    if (cancelBtn) cancelBtn.addEventListener('click', () => { document.getElementById('settings-modal').style.display = 'none'; });
+    if (cancelBtn) cancelBtn.addEventListener('click', () => closeModal('settings-modal'));
 
     if (saveBtn) {
         saveBtn.addEventListener('click', async () => {
-            config.clientId = document.getElementById('client-id-input').value;
-            config.geminiKey = document.getElementById('gemini-key-input').value;
-            let m = document.getElementById('gemini-model-select').value;
+            config.clientId   = document.getElementById('client-id-input').value;
+            config.geminiKey  = document.getElementById('gemini-key-input').value;
+            const m           = document.getElementById('gemini-model-select').value;
             config.geminiModel = m === 'custom' ? document.getElementById('gemini-custom-model').value : m;
-            config.criteria = document.getElementById('criteria-textarea').value;
-            
-            localStorage.setItem('google_client_id', config.clientId);
-            localStorage.setItem('gemini_api_key', config.geminiKey);
-            localStorage.setItem('gemini_model', config.geminiModel);
-            localStorage.setItem('extraction_criteria', config.criteria);
-            
-            document.getElementById('settings-modal').style.display = 'none';
+            config.criteria   = document.getElementById('criteria-textarea').value;
+
+            localStorage.setItem('google_client_id',      config.clientId);
+            localStorage.setItem('gemini_api_key',        config.geminiKey);
+            localStorage.setItem('gemini_model',          config.geminiModel);
+            localStorage.setItem('extraction_criteria',   config.criteria);
+
+            closeModal('settings-modal');
             syncTasks();
         });
     }
@@ -121,31 +123,26 @@ document.addEventListener('DOMContentLoaded', () => {
         syncBtn.title = "手動同期 (10d)";
         syncBtn.addEventListener('click', syncTasks);
     }
-    
-    // Model Loading Functionality
-    const fetchModelsBtn = document.getElementById('fetch-models-btn');
-    const modelSelect = document.getElementById('gemini-model-select');
+
+    // Model loading
+    const fetchModelsBtn  = document.getElementById('fetch-models-btn');
+    const modelSelect     = document.getElementById('gemini-model-select');
     const customModelInput = document.getElementById('gemini-custom-model');
 
     if (fetchModelsBtn) {
         fetchModelsBtn.addEventListener('click', async () => {
             const apiKey = document.getElementById('gemini-key-input').value;
-            if (!apiKey) {
-                alert("Please enter a Gemini API Key first.");
-                return;
-            }
+            if (!apiKey) { alert("Please enter a Gemini API Key first."); return; }
             fetchModelsBtn.innerText = "Loading...";
             try {
-                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+                const res  = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
                 const data = await res.json();
                 if (data.models) {
-                    // Filter models that support chat/generate
                     const chatModels = data.models
                         .filter(m => m.supportedGenerationMethods.includes('generateContent'))
                         .map(m => m.name.replace('models/', ''));
-                    
-                    // Keep original options but clear and refill
-                    modelSelect.innerHTML = chatModels.map(name => `<option value="${name}">${name}</option>`).join('') + '<option value="custom">-- Custom ID --</option>';
+                    modelSelect.innerHTML = chatModels.map(name => `<option value="${name}">${name}</option>`).join('') +
+                        '<option value="custom">-- Custom ID --</option>';
                     alert(`${chatModels.length} models loaded successfully!`);
                 } else {
                     alert("Failed to load models. Check your API key.");
@@ -162,7 +159,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (modelSelect) {
         modelSelect.addEventListener('change', (e) => {
             if (customModelInput) {
-                customModelInput.style.display = e.target.value === 'custom' ? 'block' : 'none';
+                customModelInput.classList.toggle('hidden', e.target.value !== 'custom');
             }
         });
     }
@@ -171,58 +168,63 @@ document.addEventListener('DOMContentLoaded', () => {
     if (sendChatBtn) sendChatBtn.addEventListener('click', handleChat);
 });
 
+// ===== Modal helpers =====
+function openModal(id) {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('open');
+}
+
+function closeModal(id) {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('open');
+}
+
+// ===== View / Nav =====
 function onLoginSuccess() {
     const loginView = document.getElementById('login-view');
-    const appView = document.getElementById('app-view');
+    const appView   = document.getElementById('app-view');
     if (loginView) loginView.style.opacity = '0';
     setTimeout(() => {
-        if (loginView) loginView.style.display = 'none';
-        if (appView) appView.style.display = 'flex'; // Use flex for gmail container
+        if (loginView) loginView.classList.add('hidden');
+        if (appView)   appView.classList.remove('hidden');
         syncTasks();
-        
-        // Start auto-sync every 5 minutes
         if (autoSyncInterval) clearInterval(autoSyncInterval);
         autoSyncInterval = setInterval(syncTasks, 5 * 60 * 1000);
     }, 300);
 }
 
 function showView(viewId) {
-    const taskList = document.getElementById('task-list');
-    const settingsView = document.getElementById('settings-view');
-    if (taskList) taskList.style.display = viewId === 'task-list' ? 'block' : 'none';
-    if (settingsView) settingsView.style.display = viewId === 'settings-view' ? 'flex' : 'none';
-}
-
-function setActiveNav(navId) {
-    ['nav-tasks', 'nav-settings'].forEach(id => {
+    ['feed-view', 'archive-view'].forEach(id => {
         const el = document.getElementById(id);
-        if (el) el.style.background = id === navId ? 'rgba(255,255,255,0.05)' : 'transparent';
+        if (el) el.classList.toggle('hidden', id !== viewId);
     });
 }
 
+function setActiveNav(navId) {
+    ['nav-tasks', 'nav-archive', 'nav-settings'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle('active', id === navId);
+    });
+}
+
+// ===== Sync =====
 async function updateModelDropdown(providedKey) {
-    const select = document.getElementById('gemini-model-select');
+    const select   = document.getElementById('gemini-model-select');
     const keyToUse = providedKey || config.geminiKey;
     if (!select || !keyToUse) return;
 
     try {
-        // Use v1beta for listing as it often includes preview models
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${keyToUse}`);
-        const data = await response.json();
-        
-        if (data.error) {
-            alert("API Error: " + data.error.message);
-            return;
-        }
+        const data     = await response.json();
+
+        if (data.error) { alert("API Error: " + data.error.message); return; }
 
         if (data.models) {
-            console.log("Raw Models Data:", data.models);
             const currentSelected = config.geminiModel;
             const options = data.models.map(m => {
                 const id = m.name.split('/').pop();
                 return `<option value="${id}" ${id === currentSelected ? 'selected' : ''}>${m.displayName} (${id})</option>`;
             });
-            
             select.innerHTML = `
                 <option value="gemini-1.5-flash">gemini-1.5-flash (Default)</option>
                 ${options.join('')}
@@ -239,12 +241,12 @@ async function updateModelDropdown(providedKey) {
 async function syncTasks() {
     if (!accessToken) return;
     const btn = document.getElementById('sync-btn');
-    if (btn) { btn.innerText = 'Syncing...'; btn.disabled = true; }
+    if (btn) { btn.innerText = 'Syncing...'; btn.disabled = true; btn.classList.add('spinning'); }
 
     try {
         const gmailMsgs = await fetchGmailMessages();
-        const tasks = await analyzeWithGemini(gmailMsgs);
-        
+        const tasks     = await analyzeWithGemini(gmailMsgs);
+
         lastFetchedTasks = tasks;
         renderFilteredTasks();
 
@@ -258,60 +260,57 @@ async function syncTasks() {
         const syncBtn = document.getElementById('sync-btn');
         if (syncBtn) {
             syncBtn.classList.remove('spinning');
+            syncBtn.innerText = '↻';
             syncBtn.disabled = false;
         }
     }
 }
 
-
 async function fetchGmailMessages() {
-    // Specific query matching user criteria:
-    // To: ishigami|tlp|slp, Newer: 7d, NOT from: tlp|slp
     const query = `(to:ishigami@isl.gr.jp OR to:tlp@isl.gr.jp OR to:slp@isl.gr.jp) -from:tlp@isl.gr.jp -from:slp@isl.gr.jp newer_than:10d`;
-    
+
     try {
         console.log("Fetching Gmail with 10d focus...");
-        const response = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=200&q=${encodeURIComponent(query)}`, {
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
+        const response = await fetch(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=200&q=${encodeURIComponent(query)}`,
+            { headers: { 'Authorization': `Bearer ${accessToken}` } }
+        );
         const data = await response.json();
         if (!data.messages) return [];
 
-        const messages = [];
-        const messageIds = data.messages.slice(0, 60); // Increase limit to 60 for more coverage
+        const messages   = [];
+        const messageIds = data.messages.slice(0, 60);
 
+        for (let i = 0; i < messageIds.length; i += 5) {
+            const chunk = messageIds.slice(i, i + 5);
+            const chunkResults = await Promise.all(chunk.map(async (m) => {
+                try {
+                    const detailRes = await fetch(
+                        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}`,
+                        { headers: { 'Authorization': `Bearer ${accessToken}` } }
+                    );
+                    if (!detailRes.ok) return null;
+                    const msg = await detailRes.json();
+                    if (!msg.payload) return null;
 
-    // Fetch details in small chunks to avoid 429 Too Many Requests
-    for (let i = 0; i < messageIds.length; i += 5) {
-        const chunk = messageIds.slice(i, i + 5);
-        const chunkResults = await Promise.all(chunk.map(async (m) => {
-            try {
-                const detailRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}`, {
-                    headers: { 'Authorization': `Bearer ${accessToken}` }
-                });
-                if (!detailRes.ok) return null;
-                const msg = await detailRes.json();
-                if (!msg.payload) return null;
-                
-                const headers = msg.payload.headers;
-                return {
-                    source: 'Gmail',
-                    id: msg.id,
-                    snippet: msg.snippet,
-                    from: headers.find(h => h.name === 'From')?.value || 'Unknown',
-                    subject: headers.find(h => h.name === 'Subject')?.value || 'No Subject',
-                    url: `https://mail.google.com/mail/u/0/#inbox/${msg.threadId || msg.id}`
-                };
-            } catch (err) {
-                console.warn(`Failed to fetch detail for ${m.id}`, err);
-                return null;
-            }
-        }));
-        messages.push(...chunkResults.filter(r => r !== null));
-        // Small delay to be polite to the API
-        await new Promise(r => setTimeout(r, 100));
-    }
-    
+                    const headers = msg.payload.headers;
+                    return {
+                        source:  'Gmail',
+                        id:      msg.id,
+                        snippet: msg.snippet,
+                        from:    headers.find(h => h.name === 'From')?.value || 'Unknown',
+                        subject: headers.find(h => h.name === 'Subject')?.value || 'No Subject',
+                        url:     `https://mail.google.com/mail/u/0/#inbox/${msg.threadId || msg.id}`
+                    };
+                } catch (err) {
+                    console.warn(`Failed to fetch detail for ${m.id}`, err);
+                    return null;
+                }
+            }));
+            messages.push(...chunkResults.filter(r => r !== null));
+            await new Promise(r => setTimeout(r, 100));
+        }
+
         return messages;
     } catch (err) {
         console.error("Gmail fetch error:", err);
@@ -321,51 +320,51 @@ async function fetchGmailMessages() {
 
 async function analyzeWithGemini(messages) {
     if (messages.length === 0) return [];
-    if (!config.geminiKey) return [{ source: 'System', priority: 'mid', title: 'API Key Missing', desc: 'Settingsから設定してください。' }];
+    if (!config.geminiKey) return [{
+        source: 'System', priority: 'mid', title: 'API Key Missing', desc: 'Settingsから設定してください。'
+    }];
 
     const modelName = config.geminiModel || 'gemini-1.5-flash';
-    // Use v1beta endpoint as default to support latest/preview models
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${config.geminiKey}`;
-    
+    const apiUrl    = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${config.geminiKey}`;
+
     const prompt = `
     以下のメールリストを分析し、「対応が必要なタスク」を漏れなく抽出してください。
-    
+
     ■ 抽出基準（優先順位）：
     1. 質問、依頼、内容確認などの依頼
     2. 総合的に見て対応が必要と思われる、または少しでも対応が必要そうなタスク（迷う場合は抽出に含める）
     3. 返信や確認を放置すると問題になりそうな連絡
-    
+
     ■ ユーザー独自の抽出要件:
     ${config.criteria}
 
     ■ 出力形式 (JSON 配列のみ):
     [{"source": "Gmail", "priority": "high|mid|low", "title": "アクションの要約", "desc": "具体的な詳細手順・内容", "time": "From/Date", "refId": "id"}]
-    
+
     ■ データ (JSON):
     ${JSON.stringify(messages.slice(0, 60))}
     `;
 
     try {
         const res = await fetch(apiUrl, {
-            method: 'POST',
+            method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+            body:    JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
         });
         const raw = await res.json();
-        
+
         if (raw.error) {
             return [{ source: 'Error', priority: 'high', title: 'Gemini API Error', desc: raw.error.message }];
         }
-        
+
         if (!raw.candidates || raw.candidates.length === 0) {
             return [{ source: 'Error', priority: 'high', title: 'AI Analysis Blocked', desc: 'AIが内容の分析を拒否しました。内容が長すぎるか、安全フィルターに制限された可能性があります。' }];
         }
-        
-        const text = raw.candidates[0].content.parts[0].text;
+
+        const text      = raw.candidates[0].content.parts[0].text;
         const jsonMatch = text.match(/\[.*\]/s);
-        let results = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
-        
-        // Map original URLs back based on refId
+        const results   = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+
         return results.map(r => {
             const original = messages.find(m => m.id === r.refId);
             return { ...r, url: original ? original.url : '#' };
@@ -376,13 +375,14 @@ async function analyzeWithGemini(messages) {
     }
 }
 
+// ===== Render =====
 function renderTasks(tasks, isArchive = false) {
     const listId = isArchive ? 'archive-list' : 'task-list';
-    const list = document.getElementById(listId);
+    const list   = document.getElementById(listId);
     if (!list) return;
-    
+
     if (tasks.length === 0) {
-        list.innerHTML = `<div style="text-align:center; padding: 2rem; color:var(--gmail-text-dim);">${isArchive ? 'No archived tasks.' : 'No action items found. All clear!'}</div>`;
+        list.innerHTML = `<div class="task-empty">${isArchive ? 'No archived tasks.' : 'No action items found. All clear!'}</div>`;
         return;
     }
 
@@ -394,9 +394,9 @@ function renderTasks(tasks, isArchive = false) {
             </div>
             <div class="date">${isArchive ? '' : 'Now'}</div>
             <div class="actions">
-                ${isArchive ? 
-                    `<button onclick="restoreTask('${task.refId}')" class="action-icon" title="Restore" style="border:none;background:none;font-size:18px;">⟲</button>` :
-                    `<button onclick="dismissTask('${task.refId}')" class="action-icon" title="Done" style="border:none;background:none;font-size:18px;">✓</button>`
+                ${isArchive
+                    ? `<button onclick="restoreTask('${task.refId}')" class="action-icon" title="Restore">⟲</button>`
+                    : `<button onclick="dismissTask('${task.refId}')" class="action-icon" title="Done">✓</button>`
                 }
             </div>
         </div>
@@ -416,63 +416,60 @@ window.dismissTask = function(id) {
     if (!config.doneTasks.includes(id)) {
         config.doneTasks.push(id);
         localStorage.setItem('done_tasks', JSON.stringify(config.doneTasks));
-        
-        // Save to archive storage
+
         const task = lastFetchedTasks.find(t => t.refId === id);
         if (task) {
             config.archivedTasks.unshift(task);
             localStorage.setItem('archived_tasks', JSON.stringify(config.archivedTasks.slice(0, 50)));
         }
 
-        // Immediate visual feedback: Hide the element
         const el = document.getElementById(`task-${id}`);
         if (el) {
-            el.style.opacity = '0';
-            el.style.transform = 'translateY(-20px)';
+            el.classList.add('task-dismissing');
             setTimeout(renderFilteredTasks, 300);
         } else {
             renderFilteredTasks();
         }
     }
-}
+};
 
 window.restoreTask = function(id) {
-    config.doneTasks = config.doneTasks.filter(tid => tid !== id);
+    config.doneTasks    = config.doneTasks.filter(tid => tid !== id);
     config.archivedTasks = config.archivedTasks.filter(t => t.refId !== id);
-    localStorage.setItem('done_tasks', JSON.stringify(config.doneTasks));
-    localStorage.setItem('archived_tasks', JSON.stringify(config.archivedTasks));
+    localStorage.setItem('done_tasks',      JSON.stringify(config.doneTasks));
+    localStorage.setItem('archived_tasks',  JSON.stringify(config.archivedTasks));
     renderArchive();
     renderFilteredTasks();
-}
+};
 
+// ===== Chat =====
 async function handleChat() {
     const input = document.getElementById('chat-input');
-    const history = document.getElementById('chat-history');
     const query = input.value.trim();
     if (!query) return;
 
-    // Add user message to UI
     appendChatMessage('user', query);
     input.value = '';
 
-    const modelName = config.geminiModel === 'custom' ? 
-        document.getElementById('gemini-custom-model').value : config.geminiModel;
+    const modelName = config.geminiModel === 'custom'
+        ? document.getElementById('gemini-custom-model').value
+        : config.geminiModel;
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${config.geminiKey}`;
 
     const context = `
     You are an AI assistant analyzing the following tasks from the user's Gmail.
     Tasks: ${JSON.stringify(lastFetchedTasks.slice(0, 20))}
-    Answer the user's question based on this context. 
+    Answer the user's question based on this context.
     Use Japanese.
     `;
 
     try {
         const res = await fetch(apiUrl, {
-            method: 'POST',
+            method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: [{ parts: [{ text: `${context}\n\nUser: ${query}` }] }] })
+            body:    JSON.stringify({ contents: [{ parts: [{ text: `${context}\n\nUser: ${query}` }] }] })
         });
-        const raw = await res.json();
+        const raw          = await res.json();
         const responseText = raw.candidates[0].content.parts[0].text;
         appendChatMessage('ai', responseText);
     } catch (e) {
@@ -482,26 +479,9 @@ async function handleChat() {
 
 function appendChatMessage(role, text) {
     const history = document.getElementById('chat-history');
-    const msg = document.createElement('div');
-    msg.style.padding = '10px 14px';
-    msg.style.borderRadius = '12px';
-    msg.style.maxWidth = '85%';
-    if (role === 'user') {
-        msg.style.alignSelf = 'flex-end';
-        msg.style.background = 'rgba(99, 102, 241, 0.2)';
-        msg.style.border = '1px solid var(--primary-glow)';
-    } else {
-        msg.style.alignSelf = 'flex-start';
-        msg.style.background = 'rgba(255, 255, 255, 0.05)';
-        msg.style.border = '1px solid var(--glass-border)';
-    }
+    const msg     = document.createElement('div');
+    msg.classList.add('chat-message', `chat-message--${role}`);
     msg.innerText = text;
     history.appendChild(msg);
     history.scrollTop = history.scrollHeight;
-}
-
-function getPriorityColor(p) {
-    if (p === 'high') return 'var(--error)';
-    if (p === 'mid') return 'var(--primary-glow)';
-    return 'var(--success)';
 }
