@@ -16,6 +16,39 @@ const config = {
 let autoSyncInterval = null;
 let lastFetchedTasks = []; // Cache for current tasks
 
+// ===== Priority feedback (learning) =====
+// 最大30件の修正履歴を保存し、次回AI分析時に参考例として渡す
+let priorityFeedback = JSON.parse(localStorage.getItem('priority_feedback') || '[]');
+
+function savePriorityFeedback() {
+    localStorage.setItem('priority_feedback', JSON.stringify(priorityFeedback.slice(0, 30)));
+}
+
+window.changePriority = function(refId, newPriority) {
+    const task = lastFetchedTasks.find(t => t.refId === refId);
+    if (!task || task.priority === newPriority) return;
+
+    // 修正履歴に追加（同じタスクの古い記録は上書き）
+    priorityFeedback = priorityFeedback.filter(f => f.refId !== refId);
+    priorityFeedback.unshift({
+        refId,
+        title:     task.title,
+        desc:      task.desc,
+        from:      task.senderFrom || '',
+        original:  task.priority,
+        corrected: newPriority,
+        at:        new Date().toISOString()
+    });
+    savePriorityFeedback();
+
+    // タスクの優先度を即時反映
+    task.priority = newPriority;
+    renderFilteredTasks();
+
+    // Drive にも保存
+    saveTasksToDrive(lastFetchedTasks);
+};
+
 // ===== Filters & Sort =====
 const activeFilters = { priority: null, deadline: null };
 let   activeSort    = 'date-desc'; // 'date-desc' | 'date-asc' | 'priority'
@@ -607,6 +640,14 @@ function extractJsonArray(text) {
 
 // 1バッチ分の Gemini 呼び出し
 async function analyzeOneBatch(apiUrl, batch, allMessages) {
+    // 過去の優先度修正履歴をプロンプトに含める（最大10件）
+    const feedbackSection = priorityFeedback.length > 0
+        ? `\n    ■ 優先度の判断基準（ユーザーが過去に修正した例）:\n    以下の実例を参考に、同様のケースでは同じ優先度を付けてください。\n` +
+          priorityFeedback.slice(0, 10).map(f =>
+              `    - 「${f.title}」: AIは"${f.original}"と判断したが、ユーザーが"${f.corrected}"に修正（${f.from}）`
+          ).join('\n')
+        : '';
+
     const prompt = `
     以下のメールリストを分析し、「対応が必要なタスク」を漏れなく抽出してください。
 
@@ -617,7 +658,7 @@ async function analyzeOneBatch(apiUrl, batch, allMessages) {
 
     ■ ユーザー独自の抽出要件:
     ${config.criteria}
-
+${feedbackSection}
     ■ 出力形式 (JSON 配列のみ。前後に説明文を一切つけないこと):
     [{"source":"Gmail","priority":"high|mid|low","title":"動詞から始めるアクション要約","desc":"具体的な対応内容","deadline":"今日中／明日中／今週中／〇月〇日まで／期限不明","time":"差出人 / 受信日","refId":"id"}]
 
@@ -754,8 +795,21 @@ function renderTasks(tasks, isArchive = false) {
     list.innerHTML = tasks.map(task => {
         const dateLabel   = formatReceivedDate(task.receivedDate) || task.time || '';
         const senderLabel = extractSenderName(task.senderFrom)    || '';
+        const pri         = task.priority || 'mid';
+        const priEmoji    = { high: '🔴', mid: '🟡', low: '🟢' };
+
+        // 優先度セレクター（ホバー時に表示）
+        const prioritySelector = !isArchive ? `
+            <select class="priority-select" title="優先度を変更（AIが次回から学習します）"
+                onchange="changePriority('${task.refId}', this.value)"
+                onclick="event.stopPropagation()">
+                <option value="high" ${pri === 'high' ? 'selected' : ''}>🔴 高</option>
+                <option value="mid"  ${pri === 'mid'  ? 'selected' : ''}>🟡 中</option>
+                <option value="low"  ${pri === 'low'  ? 'selected' : ''}>🟢 低</option>
+            </select>` : `<span style="font-size:13px">${priEmoji[pri] || ''}</span>`;
+
         return `
-        <div id="${isArchive ? 'arch-' : 'task-'}${task.refId}" class="task-row unread priority-${task.priority || 'mid'}">
+        <div id="${isArchive ? 'arch-' : 'task-'}${task.refId}" class="task-row unread priority-${pri}">
             <div class="sender" onclick="window.open('${task.url}', '_blank')">
                 <div class="received-date">${dateLabel}</div>
                 ${senderLabel ? `<div class="received-from">${senderLabel}</div>` : ''}
@@ -766,6 +820,7 @@ function renderTasks(tasks, isArchive = false) {
             </div>
             ${task.deadline ? `<div class="deadline-badge ${deadlineClass(task.deadline)}">${task.deadline}</div>` : '<div class="date"></div>'}
             <div class="actions">
+                ${prioritySelector}
                 ${!isArchive
                     ? `<button onclick="addToCalendar('${task.refId}')" class="action-icon cal-btn" title="Googleカレンダーで確認・登録">📅</button>`
                     : ''

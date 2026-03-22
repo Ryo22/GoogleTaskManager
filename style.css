@@ -210,6 +210,7 @@ body {
     display: flex;
     flex-direction: column;
     flex: 1;
+    min-height: 0;
     overflow: hidden;
 }
 
@@ -285,8 +286,11 @@ body {
 
 /* ===== Task List ===== */
 .task-list {
+    display: block;      /* flex親の影響を受けないよう明示 */
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .task-empty {
@@ -298,6 +302,8 @@ body {
 .task-row {
     display: flex;
     align-items: flex-start;
+    width: 100%;
+    box-sizing: border-box;
     padding: 10px 16px;
     min-height: 56px;
     border-bottom: 1px solid #F1F3F4;
@@ -477,6 +483,32 @@ body {
     justify-content: flex-end;
     align-self: flex-start;
     margin-top: -2px;
+}
+
+/* ===== Priority Selector ===== */
+.priority-select {
+    appearance: none;
+    -webkit-appearance: none;
+    border: none;
+    background: none;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 4px 2px;
+    border-radius: 4px;
+    line-height: 1;
+    opacity: 0;
+    transition: opacity 0.15s;
+    color: var(--gmail-text-dim);
+}
+
+.task-row:hover .priority-select {
+    opacity: 1;
+}
+
+.priority-select:focus {
+    outline: none;
+    opacity: 1;
+    background: var(--gmail-hover);
 }
 
 /* ===== Calendar Button ===== */
