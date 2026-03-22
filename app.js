@@ -4,64 +4,88 @@ let gapiInited = false;
 let gisInited = false;
 
 // Settings (persist in localStorage)
+const SUPABASE_URL_DEFAULT = 'https://eiobjituoalgxmvqvceu.supabase.co';
+const SUPABASE_KEY_DEFAULT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVpb2JqaXR1b2FsZ3htdnF2Y2V1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQxNjgxNjEsImV4cCI6MjA4OTc0NDE2MX0.1Wmqq-WSWiuLcrlJ0-ZAEzfAgmhMofnSsmQvnokjpE0';
+
 const config = {
-    clientId: localStorage.getItem('google_client_id') || '710668584134-j2bdh6dptd1d46uojgqofubfn70out0g.apps.googleusercontent.com',
-    geminiKey: localStorage.getItem('gemini_api_key') || '',
-    geminiModel: localStorage.getItem('gemini_model') || 'gemini-3.1-flash-lite-preview',
-    criteria: localStorage.getItem('extraction_criteria') || "直近10日以内の ishigami@isl.gr.jp / tlp@isl.gr.jp / slp@isl.gr.jp 宛メールから、質問、依頼、内容確認、および総合的に見て対応が必要、または少しでも対応が必要と思わせるタスクを抽出してください。",
-    doneTasks: JSON.parse(localStorage.getItem('done_tasks') || '[]'),
-    archivedTasks: JSON.parse(localStorage.getItem('archived_tasks') || '[]')
+    clientId:     localStorage.getItem('google_client_id')    || '710668584134-j2bdh6dptd1d46uojgqofubfn70out0g.apps.googleusercontent.com',
+    geminiKey:    localStorage.getItem('gemini_api_key')      || '',
+    geminiModel:  localStorage.getItem('gemini_model')        || 'gemini-3.1-flash-lite-preview',
+    supabaseUrl:  localStorage.getItem('supabase_url')        || SUPABASE_URL_DEFAULT,
+    supabaseKey:  localStorage.getItem('supabase_key')        || SUPABASE_KEY_DEFAULT,
+    criteria:     localStorage.getItem('extraction_criteria') || "直近10日以内の ishigami@isl.gr.jp / tlp@isl.gr.jp / slp@isl.gr.jp 宛メールから、質問、依頼、内容確認、および総合的に見て対応が必要、または少しでも対応が必要と思わせるタスクを抽出してください。",
+    doneTasks:    JSON.parse(localStorage.getItem('done_tasks')     || '[]'),
+    archivedTasks:JSON.parse(localStorage.getItem('archived_tasks') || '[]')
 };
 
 let autoSyncInterval = null;
 let lastFetchedTasks = []; // Cache for current tasks
 
-// ===== IndexedDB Cache =====
-let _db = null;
-
-async function openDB() {
-    if (_db) return _db;
-    return new Promise((resolve, reject) => {
-        const req = indexedDB.open('GmailTaskCache', 1);
-        req.onupgradeneeded = e => {
-            const db = e.target.result;
-            if (!db.objectStoreNames.contains('messages')) {
-                db.createObjectStore('messages', { keyPath: 'id' });
-            }
-        };
-        req.onsuccess = e => { _db = e.target.result; resolve(_db); };
-        req.onerror   = e => reject(e.target.error);
-    });
+// ===== Supabase Cache =====
+function sbHeaders(extra = {}) {
+    return {
+        'apikey':         config.supabaseKey,
+        'Authorization':  `Bearer ${config.supabaseKey}`,
+        'Content-Type':   'application/json',
+        ...extra
+    };
 }
 
+// ids[] を 200件ずつ分割して SELECT
 async function cacheGet(ids) {
-    const db = await openDB();
-    const tx = db.transaction('messages', 'readonly');
-    const store = tx.objectStore('messages');
     const map = new Map();
-    await Promise.all(ids.map(id => new Promise(res => {
-        const req = store.get(id);
-        req.onsuccess = () => { if (req.result) map.set(id, req.result); res(); };
-        req.onerror = res;
-    })));
+    if (!config.supabaseUrl || !config.supabaseKey) return map;
+    for (let i = 0; i < ids.length; i += 200) {
+        try {
+            const chunk = ids.slice(i, i + 200).join(',');
+            const res   = await fetch(
+                `${config.supabaseUrl}/rest/v1/gmail_messages?id=in.(${chunk})&select=id,data`,
+                { headers: sbHeaders() }
+            );
+            if (res.ok) {
+                const rows = await res.json();
+                rows.forEach(r => map.set(r.id, r.data));
+            } else {
+                console.warn('cacheGet error', await res.text());
+            }
+        } catch (e) { console.warn('cacheGet fetch error', e); }
+    }
     return map;
 }
 
+// messages[] を 100件ずつ UPSERT
 async function cacheSet(messages) {
-    if (!messages.length) return;
-    const db = await openDB();
-    const tx = db.transaction('messages', 'readwrite');
-    const store = tx.objectStore('messages');
-    messages.forEach(m => store.put(m));
-    return new Promise(res => { tx.oncomplete = res; tx.onerror = res; });
+    if (!messages.length || !config.supabaseUrl || !config.supabaseKey) return;
+    const rows = messages.map(m => ({ id: m.id, data: m }));
+    for (let i = 0; i < rows.length; i += 100) {
+        try {
+            await fetch(`${config.supabaseUrl}/rest/v1/gmail_messages`, {
+                method:  'POST',
+                headers: sbHeaders({ 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
+                body:    JSON.stringify(rows.slice(i, i + 100))
+            });
+        } catch (e) { console.warn('cacheSet error', e); }
+    }
 }
 
+window.copySql = function() {
+    const sql = document.getElementById('setup-sql')?.innerText || '';
+    navigator.clipboard.writeText(sql).then(() => {
+        const btn = document.getElementById('sql-copy-btn');
+        if (btn) { btn.innerText = 'コピーしました ✓'; setTimeout(() => btn.innerText = 'コピー', 2000); }
+    });
+};
+
 window.clearGmailCache = async function() {
-    const db = await openDB();
-    const tx = db.transaction('messages', 'readwrite');
-    tx.objectStore('messages').clear();
-    await new Promise(res => { tx.oncomplete = res; });
-    alert('キャッシュをクリアしました。次回同期時に全件再取得します。');
+    if (!config.supabaseUrl || !config.supabaseKey) { alert('Supabase が設定されていません。'); return; }
+    try {
+        const res = await fetch(
+            `${config.supabaseUrl}/rest/v1/gmail_messages?cached_at=not.is.null`,
+            { method: 'DELETE', headers: sbHeaders({ 'Prefer': 'return=minimal' }) }
+        );
+        if (res.ok) alert('Supabase キャッシュをクリアしました。次回同期時に全件再取得します。');
+        else alert('クリア失敗: ' + await res.text());
+    } catch (e) { alert('エラー: ' + e.message); }
 };
 
 window.gisLoaded = function() {
@@ -140,9 +164,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const ci = document.getElementById('client-id-input');
         const gk = document.getElementById('gemini-key-input');
         const ct = document.getElementById('criteria-textarea');
-        if (ci) ci.value = config.clientId || '';
-        if (gk) gk.value = config.geminiKey || '';
-        if (ct) ct.value = config.criteria || '';
+        const su = document.getElementById('supabase-url-input');
+        const sk = document.getElementById('supabase-key-input');
+        if (ci) ci.value = config.clientId    || '';
+        if (gk) gk.value = config.geminiKey   || '';
+        if (ct) ct.value = config.criteria     || '';
+        if (su) su.value = config.supabaseUrl  || '';
+        if (sk) sk.value = config.supabaseKey  || '';
 
         setActiveNav('nav-settings');
     });
@@ -151,16 +179,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (saveBtn) {
         saveBtn.addEventListener('click', async () => {
-            config.clientId   = document.getElementById('client-id-input').value;
-            config.geminiKey  = document.getElementById('gemini-key-input').value;
-            const m           = document.getElementById('gemini-model-select').value;
+            config.clientId    = document.getElementById('client-id-input').value;
+            config.geminiKey   = document.getElementById('gemini-key-input').value;
+            const m            = document.getElementById('gemini-model-select').value;
             config.geminiModel = m === 'custom' ? document.getElementById('gemini-custom-model').value : m;
-            config.criteria   = document.getElementById('criteria-textarea').value;
+            config.criteria    = document.getElementById('criteria-textarea').value;
+            config.supabaseUrl = document.getElementById('supabase-url-input').value;
+            config.supabaseKey = document.getElementById('supabase-key-input').value;
 
-            localStorage.setItem('google_client_id',      config.clientId);
-            localStorage.setItem('gemini_api_key',        config.geminiKey);
-            localStorage.setItem('gemini_model',          config.geminiModel);
-            localStorage.setItem('extraction_criteria',   config.criteria);
+            localStorage.setItem('google_client_id',    config.clientId);
+            localStorage.setItem('gemini_api_key',      config.geminiKey);
+            localStorage.setItem('gemini_model',        config.geminiModel);
+            localStorage.setItem('extraction_criteria', config.criteria);
+            localStorage.setItem('supabase_url',        config.supabaseUrl);
+            localStorage.setItem('supabase_key',        config.supabaseKey);
 
             closeModal('settings-modal');
             syncTasks();
