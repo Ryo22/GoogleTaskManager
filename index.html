@@ -23,17 +23,14 @@
             <span>Gmail Task Manager</span>
         </div>
         <div class="user-area">
-            <span id="sync-status" style="color: var(--gmail-text-dim);">Ready</span>
+            <button id="sync-btn" class="action-icon" title="手動同期" style="font-size: 20px; font-weight: bold; margin-right: 12px; height: 40px; width: 40px;">↻</button>
+            <span id="sync-status" style="color: var(--gmail-text-dim); margin-right: 12px;">Ready</span>
             <div id="user-info" style="font-weight: 500;">Guest User</div>
         </div>
     </div>
 
     <div class="main-container">
         <aside class="sidebar">
-            <button id="sync-btn" class="compose-btn">
-                <span style="font-size: 24px;">↻</span>
-                <span>手動同期</span>
-            </button>
             <div id="nav-tasks" class="nav-item active">Feed (Inbox)</div>
             <div id="nav-archive" class="nav-item">Archive (Done)</div>
             <div id="nav-settings" class="nav-item">Settings</div>
