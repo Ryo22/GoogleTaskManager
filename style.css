@@ -90,10 +90,42 @@ body {
 }
 
 .sync-btn {
-    font-size: 20px;
-    font-weight: bold;
-    height: 40px;
-    width: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 36px;
+    width: 36px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: var(--gmail-text-dim);
+    transition: background 0.2s, color 0.2s;
+}
+
+.sync-btn:hover {
+    background: var(--gmail-hover);
+    color: var(--gmail-blue);
+}
+
+.sync-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.sync-btn .material-icons-round {
+    font-size: 22px;
+    user-select: none;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+.sync-btn.spinning .material-icons-round {
+    animation: spin 0.8s linear infinite;
+    color: var(--gmail-blue);
 }
 
 .sync-status {
@@ -322,10 +354,29 @@ body {
 }
 
 .actions {
-    width: 40px;
     flex-shrink: 0;
     display: flex;
+    align-items: center;
+    gap: 4px;
     justify-content: flex-end;
+}
+
+/* ===== Calendar Button ===== */
+.cal-btn {
+    opacity: 0;
+    transition: opacity 0.2s, background 0.2s;
+    font-size: 15px;
+    color: var(--gmail-blue);
+}
+
+.task-row:hover .cal-btn {
+    opacity: 1;
+}
+
+.cal-btn:disabled {
+    color: var(--gmail-low);
+    opacity: 1;
+    cursor: default;
 }
 
 /* ===== Action Icons ===== */

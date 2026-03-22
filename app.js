@@ -7,7 +7,7 @@ let gisInited = false;
 const config = {
     clientId: localStorage.getItem('google_client_id') || '710668584134-j2bdh6dptd1d46uojgqofubfn70out0g.apps.googleusercontent.com',
     geminiKey: localStorage.getItem('gemini_api_key') || '',
-    geminiModel: localStorage.getItem('gemini_model') || 'gemini-2.0-flash-lite',
+    geminiModel: localStorage.getItem('gemini_model') || 'gemini-3.1-flash-lite-preview',
     criteria: localStorage.getItem('extraction_criteria') || "直近10日以内の ishigami@isl.gr.jp / tlp@isl.gr.jp / slp@isl.gr.jp 宛メールから、質問、依頼、内容確認、および総合的に見て対応が必要、または少しでも対応が必要と思わせるタスクを抽出してください。",
     doneTasks: JSON.parse(localStorage.getItem('done_tasks') || '[]'),
     archivedTasks: JSON.parse(localStorage.getItem('archived_tasks') || '[]')
@@ -37,7 +37,7 @@ function checkBeforeLogin() {
     if (config.clientId && gisInited) {
         tokenClient = google.accounts.oauth2.initTokenClient({
             client_id: config.clientId,
-            scope: 'https://www.googleapis.com/auth/gmail.readonly',
+            scope: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar',
             callback: (resp) => {
                 if (resp.error) {
                     console.error("Token error:", resp);
@@ -240,7 +240,7 @@ async function updateModelDropdown(providedKey) {
 async function syncTasks() {
     if (!accessToken) return;
     const btn = document.getElementById('sync-btn');
-    if (btn) { btn.disabled = true; }
+    if (btn) { btn.classList.add('spinning'); btn.disabled = true; }
 
     try {
         const gmailMsgs = await fetchGmailMessages();
@@ -257,9 +257,7 @@ async function syncTasks() {
         if (statusEl) statusEl.innerText = "Sync Error";
     } finally {
         const syncBtn = document.getElementById('sync-btn');
-        if (syncBtn) {
-            syncBtn.disabled = false;
-        }
+        if (syncBtn) { syncBtn.classList.remove('spinning'); syncBtn.disabled = false; }
     }
 }
 
@@ -418,6 +416,10 @@ function renderTasks(tasks, isArchive = false) {
             </div>
             ${task.deadline ? `<div class="deadline-badge ${deadlineClass(task.deadline)}">${task.deadline}</div>` : '<div class="date"></div>'}
             <div class="actions">
+                ${!isArchive && task.deadline && task.deadline !== '期限不明'
+                    ? `<button onclick="addToCalendar('${task.refId}')" class="action-icon cal-btn" title="カレンダーに追加 (${task.deadline})">📅</button>`
+                    : ''
+                }
                 ${isArchive
                     ? `<button onclick="restoreTask('${task.refId}')" class="action-icon" title="Restore">⟲</button>`
                     : `<button onclick="dismissTask('${task.refId}')" class="action-icon" title="Done">✓</button>`
@@ -454,6 +456,65 @@ window.dismissTask = function(id) {
         } else {
             renderFilteredTasks();
         }
+    }
+};
+
+// ===== Calendar =====
+function deadlineToDate(deadline) {
+    const today = new Date();
+    const d = (deadline || '').replace(/\s/g, '');
+    if (d === '今日中') { return new Date(today); }
+    if (d === '明日中') { const t = new Date(today); t.setDate(t.getDate() + 1); return t; }
+    if (d === '今週中') {
+        const t = new Date(today);
+        const daysUntilFriday = ((5 - t.getDay()) + 7) % 7 || 7;
+        t.setDate(t.getDate() + daysUntilFriday);
+        return t;
+    }
+    const match = d.match(/(\d+)月(\d+)日/);
+    if (match) {
+        const t = new Date(today.getFullYear(), parseInt(match[1]) - 1, parseInt(match[2]));
+        if (t < today) t.setFullYear(today.getFullYear() + 1);
+        return t;
+    }
+    return null;
+}
+
+window.addToCalendar = async function(id) {
+    const task = lastFetchedTasks.find(t => t.refId === id);
+    if (!task) return;
+
+    let eventDate = deadlineToDate(task.deadline);
+    if (!eventDate) {
+        const input = prompt('締め切り日を入力してください (YYYY-MM-DD):', new Date().toISOString().split('T')[0]);
+        if (!input) return;
+        eventDate = new Date(input);
+    }
+
+    const dateStr = eventDate.toISOString().split('T')[0];
+    const event = {
+        summary: `[対応] ${task.title}`,
+        description: `${task.desc}\n\n差出人: ${task.time || ''}${task.url ? '\nメール: ' + task.url : ''}`,
+        start: { date: dateStr },
+        end:   { date: dateStr },
+        reminders: { useDefault: true }
+    };
+
+    try {
+        const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(event)
+        });
+        const data = await res.json();
+        if (data.error) {
+            alert('カレンダー登録失敗: ' + data.error.message);
+        } else {
+            const btn = document.querySelector(`#task-${id} .cal-btn`);
+            if (btn) { btn.innerHTML = '✅'; btn.disabled = true; btn.title = 'カレンダーに追加済み'; }
+        }
+    } catch (e) {
+        alert('エラー: ' + e.message);
     }
 };
 
