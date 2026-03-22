@@ -166,6 +166,8 @@ body {
     flex: 1;
     display: flex;
     overflow: hidden;
+    position: relative;
+    width: 100%;
 }
 
 /* ===== Sidebar ===== */
@@ -175,6 +177,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 4px;
+    flex-shrink: 0;
 }
 
 .nav-item {
@@ -570,6 +573,7 @@ body {
     flex-direction: column;
     background: var(--gmail-white);
     overflow: hidden;
+    flex-shrink: 0;
 }
 
 .chat-container {
@@ -578,6 +582,64 @@ body {
     height: 100%;
     padding: 16px;
     box-sizing: border-box;
+}
+
+/* ===== Responsive Layout Fixes ===== */
+@media (max-width: 1024px) {
+    .right-panel {
+        width: 240px;
+        min-width: 240px;
+    }
+    .sidebar {
+        width: 180px;
+    }
+}
+
+@media (max-width: 768px) {
+    .main-container {
+        flex-direction: column;
+        overflow-y: auto;
+    }
+    .sidebar {
+        width: 100%;
+        flex-direction: row;
+        height: auto;
+        border-bottom: 1px solid var(--gmail-border);
+        padding: 4px;
+        overflow-x: auto;
+    }
+    .nav-item {
+        flex: 1;
+        justify-content: center;
+        white-space: nowrap;
+        padding: 0 12px;
+    }
+    .content-area {
+        margin: 0;
+        border-radius: 0;
+        overflow: visible;
+    }
+    .right-panel {
+        width: 100%;
+        max-width: 100%;
+        height: 300px;
+        border-top: 1px solid var(--gmail-border);
+    }
+    #panel-resizer {
+        display: none;
+    }
+    /* Mobile adjustments for task row */
+    .task-row {
+        flex-wrap: wrap;
+        height: auto;
+    }
+    .title-snippet {
+        min-width: 100%;
+        margin-top: 4px;
+    }
+    .date, .deadline-badge {
+        margin-left: auto;
+    }
 }
 
 .chat-title {
